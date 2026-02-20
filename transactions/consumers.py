@@ -1,10 +1,10 @@
 import json
-from channels.generic.websocket import AsyncWebSocketConsumer
+from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from urllib.parse import parse_qs
 
 
-class AdminDashboardConsumer(AsyncWebSocketConsumer):
+class AdminDashboardConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for the admin dashboard.
     Admins connect and receive real-time updates for:
