@@ -25,9 +25,10 @@ from .serializers import (
 class SubscriptionPlanListView(generics.ListAPIView):
     """Public endpoint to list available subscription plans."""
 
-    queryset = SubscriptionPlan.objects.filter(is_active=True)
+    queryset = SubscriptionPlan.objects.filter(is_active=True).order_by("monthly_price")
     serializer_class = SubscriptionPlanSerializer
     permission_classes = [permissions.AllowAny]
+    pagination_class = None  # Return plain array — no pagination wrapper
 
 
 # ---------------------------------------------------------------------------
