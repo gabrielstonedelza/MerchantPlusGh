@@ -210,3 +210,12 @@ class AdjustProviderBalanceSerializer(serializers.Serializer):
     provider = serializers.ChoiceField(choices=ProviderBalance.Provider.choices)
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     operation = serializers.ChoiceField(choices=[("add", "Add"), ("subtract", "Subtract")])
+
+
+class AdminAdjustProviderBalanceSerializer(serializers.Serializer):
+    """Used by admin/owner to directly set or adjust any agent's balance."""
+    user = serializers.UUIDField()
+    provider = serializers.ChoiceField(choices=ProviderBalance.Provider.choices)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    operation = serializers.ChoiceField(choices=[("add", "Add"), ("subtract", "Subtract"), ("set", "Set")])
+    note = serializers.CharField(required=False, allow_blank=True)

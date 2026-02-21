@@ -22,6 +22,7 @@ from .serializers import (
     ProviderBalanceSerializer,
     SetProviderBalanceSerializer,
     AdjustProviderBalanceSerializer,
+    AdminAdjustProviderBalanceSerializer,
 )
 
 
@@ -570,3 +571,48 @@ def adjust_provider_balance(request):
 
     balance.save()
     return Response(ProviderBalanceSerializer(balance).data)
+
+
+@api_view(["POST"])
+def admin_adjust_provider_balance(request):
+    """
+    Admin/owner can set or adjust any agent's balance for any provider.
+    Supports operations: 'add', 'subtract', 'set'.
+    """
+    membership = getattr(request, "membership", None)
+    if not membership or membership.role not in ("owner", "admin"):
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    serializer = AdminAdjustProviderBalanceSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    amount = data["amount"]
+    operation = data["operation"]
+
+    balance, created = ProviderBalance.objects.get_or_create(
+        company=membership.company,
+        user_id=data["user"],
+        provider=data["provider"],
+        defaults={"starting_balance": amount, "balance": amount},
+    )
+
+    if not created:
+        if operation == "set":
+            balance.starting_balance = amount
+            balance.balance = amount
+        elif operation == "add":
+            balance.balance += amount
+        else:  # subtract
+            if balance.balance < amount:
+                return Response(
+                    {"error": "Insufficient balance."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            balance.balance -= amount
+        balance.save()
+
+    return Response(
+        ProviderBalanceSerializer(balance).data,
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )

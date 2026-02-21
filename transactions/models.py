@@ -296,6 +296,7 @@ class ProviderBalance(models.Model):
         ECOBANK = "ecobank", "Ecobank"
         FIDELITY = "fidelity", "Fidelity"
         CAL_BANK = "cal_bank", "Cal Bank"
+        CASH = "cash", "Cash"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     company = models.ForeignKey(

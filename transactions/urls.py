@@ -32,4 +32,5 @@ urlpatterns = [
     path("balances/set/", views.set_provider_balance, name="set-provider-balance"),
     path("balances/initialize/", views.initialize_all_balances, name="initialize-all-balances"),
     path("balances/adjust/", views.adjust_provider_balance, name="adjust-provider-balance"),
+    path("balances/admin-adjust/", views.admin_adjust_provider_balance, name="admin-adjust-provider-balance"),
 ]
