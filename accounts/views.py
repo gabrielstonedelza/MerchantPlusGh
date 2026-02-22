@@ -199,7 +199,7 @@ def team_members(request):
         company=membership.company
     ).select_related("user", "branch")
 
-    if membership.role == "teller":
+    if membership.role == "agent":
         members = members.filter(is_active=True)
 
     return Response(MembershipSerializer(members, many=True).data)
@@ -224,9 +224,9 @@ def team_member_detail(request, member_id):
 def update_team_member(request, member_id):
     """Update a team member's role, branch, or active status."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(
-            {"error": "Only owners and admins can manage team members."},
+            {"error": "Only owners can manage team members."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
@@ -279,7 +279,7 @@ def update_team_member(request, member_id):
 def deactivate_team_member(request, member_id):
     """Deactivate a team member (soft delete)."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -312,7 +312,7 @@ def deactivate_team_member(request, member_id):
 def invitations(request):
     """List or create invitations."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     if request.method == "GET":
@@ -383,7 +383,7 @@ def invitations(request):
 def revoke_invitation(request, invitation_id):
     """Revoke a pending invitation."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:

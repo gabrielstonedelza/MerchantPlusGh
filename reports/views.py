@@ -21,7 +21,7 @@ from .serializers import SavedReportSerializer
 def dashboard(request):
     """Main dashboard endpoint for company owners/admins."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
@@ -103,7 +103,7 @@ def dashboard(request):
 def transaction_summary(request):
     """Aggregated transaction report with filters."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
@@ -169,7 +169,7 @@ def transaction_summary(request):
 def agent_performance(request):
     """Report on each agent's transaction volume and count."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
@@ -220,7 +220,7 @@ def agent_performance(request):
 def revenue_report(request):
     """Revenue from fees and commissions."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
@@ -267,7 +267,7 @@ def revenue_report(request):
 def saved_reports(request):
     """List or create saved report configurations."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     if request.method == "GET":
@@ -292,7 +292,7 @@ def delete_saved_report(request, report_id):
     except SavedReport.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
-    if report.created_by != request.user and membership.role not in ("owner", "admin"):
+    if report.created_by != request.user and membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     report.delete()

@@ -2,10 +2,10 @@
 Role-based access control permissions for the SaaS platform.
 
 Role Hierarchy:
-    Owner (4) > Admin (3) > Manager (2) > Teller (1)
+    Owner (2) > Agent (1)
 
 Usage in views:
-    from permissions import IsCompanyMember, IsAdminOrAbove
+    from permissions import IsCompanyMember, IsOwner
 
     @api_view(["GET"])
     @permission_classes([IsAuthenticated, IsCompanyMember])
@@ -33,22 +33,6 @@ class IsOwner(BasePermission):
     def has_permission(self, request, view):
         membership = getattr(request, "membership", None)
         return membership and membership.role == "owner"
-
-
-class IsAdminOrAbove(BasePermission):
-    """User must be admin or owner."""
-
-    def has_permission(self, request, view):
-        membership = getattr(request, "membership", None)
-        return membership and membership.role in ("owner", "admin")
-
-
-class IsManagerOrAbove(BasePermission):
-    """User must be manager, admin, or owner."""
-
-    def has_permission(self, request, view):
-        membership = getattr(request, "membership", None)
-        return membership and membership.role in ("owner", "admin", "manager")
 
 
 class IsCompanyActive(BasePermission):

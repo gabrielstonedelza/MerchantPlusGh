@@ -75,9 +75,9 @@ def mark_all_read(request):
 
 @api_view(["GET"])
 def activity_feed(request):
-    """Get the company activity feed. Manager+ only."""
+    """Get the company activity feed. Owner only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     qs = ActivityLog.objects.filter(company=membership.company).select_related("actor")

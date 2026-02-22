@@ -102,21 +102,21 @@ def owner_membership(owner_user, company):
 
 
 @pytest.fixture
-def teller_user(db):
+def agent_user(db):
     return User.objects.create_user(
-        email="teller@testcompany.com",
-        password="tellerpass123",
-        full_name="Test Teller",
+        email="agent@testcompany.com",
+        password="agentpass123",
+        full_name="Test Agent",
         phone="+233200000002",
     )
 
 
 @pytest.fixture
-def teller_membership(teller_user, company):
+def agent_membership(agent_user, company):
     return Membership.objects.create(
-        user=teller_user,
+        user=agent_user,
         company=company,
-        role="teller",
+        role="agent",
         is_active=True,
     )
 
@@ -128,8 +128,8 @@ def owner_token(owner_user):
 
 
 @pytest.fixture
-def teller_token(teller_user):
-    token, _ = Token.objects.get_or_create(user=teller_user)
+def agent_token(agent_user):
+    token, _ = Token.objects.get_or_create(user=agent_user)
     return token.key
 
 
@@ -139,17 +139,19 @@ def api_client():
 
 
 @pytest.fixture
-def owner_client(api_client, owner_token, company):
-    api_client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token}")
-    api_client.defaults["HTTP_X_COMPANY_ID"] = str(company.id)
-    return api_client
+def owner_client(owner_token, company):
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token}")
+    client.defaults["HTTP_X_COMPANY_ID"] = str(company.id)
+    return client
 
 
 @pytest.fixture
-def teller_client(api_client, teller_token, company):
-    api_client.credentials(HTTP_AUTHORIZATION=f"Token {teller_token}")
-    api_client.defaults["HTTP_X_COMPANY_ID"] = str(company.id)
-    return api_client
+def agent_client(agent_token, company):
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {agent_token}")
+    client.defaults["HTTP_X_COMPANY_ID"] = str(company.id)
+    return client
 
 
 @pytest.fixture

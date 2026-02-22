@@ -67,10 +67,10 @@ class TestCreateTransactions:
 @pytest.mark.django_db
 class TestApprovalWorkflow:
     def test_approve_transaction(
-        self, owner_client, teller_client, owner_membership, teller_membership, company_settings, customer
+        self, owner_client, agent_client, owner_membership, agent_membership, company_settings, customer
     ):
-        # Teller creates a large transaction
-        create_resp = teller_client.post("/api/v1/transactions/bank-deposit/", {
+        # Agent creates a large transaction
+        create_resp = agent_client.post("/api/v1/transactions/bank-deposit/", {
             "customer": str(customer.id),
             "amount": "5000.00",
             "bank_name": "Ecobank",
@@ -106,8 +106,8 @@ class TestApprovalWorkflow:
         })
         assert approve_resp.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_teller_cannot_approve(
-        self, owner_client, teller_client, owner_membership, teller_membership, company_settings, customer
+    def test_agent_cannot_approve(
+        self, owner_client, agent_client, owner_membership, agent_membership, company_settings, customer
     ):
         create_resp = owner_client.post("/api/v1/transactions/bank-deposit/", {
             "customer": str(customer.id),
@@ -119,7 +119,7 @@ class TestApprovalWorkflow:
         })
         tx_id = create_resp.data["id"]
 
-        approve_resp = teller_client.post(f"/api/v1/transactions/{tx_id}/approve/", {
+        approve_resp = agent_client.post(f"/api/v1/transactions/{tx_id}/approve/", {
             "action": "approve",
         })
         assert approve_resp.status_code == status.HTTP_403_FORBIDDEN
@@ -147,8 +147,8 @@ class TestReversal:
         assert reverse_resp.status_code == status.HTTP_201_CREATED
         assert reverse_resp.data["transaction_type"] == "reversal"
 
-    def test_teller_cannot_reverse(
-        self, owner_client, teller_client, owner_membership, teller_membership, company_settings, customer
+    def test_agent_cannot_reverse(
+        self, owner_client, agent_client, owner_membership, agent_membership, company_settings, customer
     ):
         create_resp = owner_client.post("/api/v1/transactions/bank-deposit/", {
             "customer": str(customer.id),
@@ -160,8 +160,8 @@ class TestReversal:
         })
         tx_id = create_resp.data["id"]
 
-        reverse_resp = teller_client.post(f"/api/v1/transactions/{tx_id}/reverse/", {
-            "reason": "Teller trying",
+        reverse_resp = agent_client.post(f"/api/v1/transactions/{tx_id}/reverse/", {
+            "reason": "Agent trying",
         })
         assert reverse_resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -169,11 +169,11 @@ class TestReversal:
 @pytest.mark.django_db
 class TestTransactionList:
     def test_owner_sees_all_transactions(
-        self, owner_client, teller_client, owner_membership, teller_membership, company_settings, customer
+        self, owner_client, agent_client, owner_membership, agent_membership, company_settings, customer
     ):
-        # Teller creates 2 transactions
+        # Agent creates 2 transactions
         for _ in range(2):
-            teller_client.post("/api/v1/transactions/cash/", {
+            agent_client.post("/api/v1/transactions/cash/", {
                 "customer": str(customer.id),
                 "transaction_type": "deposit",
                 "amount": "100.00",
@@ -183,8 +183,8 @@ class TestTransactionList:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2
 
-    def test_teller_sees_only_own_transactions(
-        self, owner_client, teller_client, owner_membership, teller_membership, company_settings, customer
+    def test_agent_sees_only_own_transactions(
+        self, owner_client, agent_client, owner_membership, agent_membership, company_settings, customer
     ):
         # Owner creates 1 transaction
         owner_client.post("/api/v1/transactions/cash/", {
@@ -192,14 +192,14 @@ class TestTransactionList:
             "transaction_type": "deposit",
             "amount": "100.00",
         })
-        # Teller creates 1 transaction
-        teller_client.post("/api/v1/transactions/cash/", {
+        # Agent creates 1 transaction
+        agent_client.post("/api/v1/transactions/cash/", {
             "customer": str(customer.id),
             "transaction_type": "deposit",
             "amount": "100.00",
         })
 
-        response = teller_client.get("/api/v1/transactions/")
+        response = agent_client.get("/api/v1/transactions/")
         assert response.status_code == status.HTTP_200_OK
-        # Teller should only see their own
+        # Agent should only see their own
         assert len(response.data) == 1

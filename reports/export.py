@@ -25,7 +25,7 @@ from accounts.models import Membership
 def export_transactions_csv(request):
     """Export transactions as CSV. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
@@ -89,7 +89,7 @@ def export_transactions_csv(request):
 def export_agents_csv(request):
     """Export agent performance report as CSV. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company

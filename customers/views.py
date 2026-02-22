@@ -108,9 +108,9 @@ def customer_detail(request, customer_id):
         return Response(CustomerSerializer(customer).data)
 
     if request.method == "DELETE":
-        if membership.role not in ("owner", "admin"):
+        if membership.role != "owner":
             return Response(
-                {"error": "Only owners and admins can delete customers."},
+                {"error": "Only owners can delete customers."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         customer.status = Customer.Status.INACTIVE
@@ -147,7 +147,7 @@ def customer_by_phone(request):
 def verify_kyc(request, customer_id):
     """Approve or reject a customer's KYC. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:

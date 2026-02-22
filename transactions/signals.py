@@ -17,7 +17,7 @@ def transaction_post_save(sender, instance, created, **kwargs):
             if instance.amount >= settings.large_transaction_threshold:
                 from accounts.models import Membership
                 admin_memberships = Membership.objects.filter(
-                    company=company, role__in=["owner", "admin"], is_active=True,
+                    company=company, role="owner", is_active=True,
                 )
                 for m in admin_memberships:
                     Notification.objects.create(
@@ -36,7 +36,7 @@ def transaction_post_save(sender, instance, created, **kwargs):
         if instance.requires_approval and instance.status == "pending":
             from accounts.models import Membership
             approver_memberships = Membership.objects.filter(
-                company=company, role__in=["owner", "admin", "manager"],
+                company=company, role="owner",
                 is_active=True,
             ).exclude(user=instance.initiated_by)
             for m in approver_memberships:

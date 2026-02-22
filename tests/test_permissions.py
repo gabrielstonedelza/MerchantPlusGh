@@ -10,26 +10,26 @@ from rest_framework import status
 class TestRoleBasedAccess:
     """Ensure each endpoint respects role hierarchy."""
 
-    def test_teller_cannot_access_reports(self, teller_client, teller_membership):
-        response = teller_client.get("/api/v1/reports/dashboard/")
+    def test_agent_cannot_access_reports(self, agent_client, agent_membership):
+        response = agent_client.get("/api/v1/reports/dashboard/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_owner_can_access_reports(self, owner_client, owner_membership):
         response = owner_client.get("/api/v1/reports/dashboard/")
         assert response.status_code == status.HTTP_200_OK
 
-    def test_teller_cannot_manage_team(self, teller_client, teller_membership, owner_membership):
-        response = teller_client.post(
+    def test_agent_cannot_manage_team(self, agent_client, agent_membership, owner_membership):
+        response = agent_client.post(
             f"/api/v1/auth/team/{owner_membership.id}/deactivate/"
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_teller_cannot_access_audit(self, teller_client, teller_membership):
-        response = teller_client.get("/api/v1/audit/")
+    def test_agent_cannot_access_audit(self, agent_client, agent_membership):
+        response = agent_client.get("/api/v1/audit/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_teller_cannot_approve_pending(self, teller_client, teller_membership):
-        response = teller_client.get("/api/v1/transactions/pending/")
+    def test_agent_cannot_approve_pending(self, agent_client, agent_membership):
+        response = agent_client.get("/api/v1/transactions/pending/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
 

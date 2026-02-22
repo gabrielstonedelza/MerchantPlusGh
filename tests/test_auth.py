@@ -81,19 +81,19 @@ class TestChangePassword:
 
 @pytest.mark.django_db
 class TestTeamManagement:
-    def test_list_team_members(self, owner_client, owner_membership, teller_membership):
+    def test_list_team_members(self, owner_client, owner_membership, agent_membership):
         response = owner_client.get("/api/v1/auth/team/")
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 2
 
-    def test_teller_cannot_deactivate(self, teller_client, teller_membership, owner_membership):
-        response = teller_client.post(
+    def test_agent_cannot_deactivate(self, agent_client, agent_membership, owner_membership):
+        response = agent_client.post(
             f"/api/v1/auth/team/{owner_membership.id}/deactivate/"
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_owner_can_deactivate_teller(self, owner_client, owner_membership, teller_membership):
+    def test_owner_can_deactivate_agent(self, owner_client, owner_membership, agent_membership):
         response = owner_client.post(
-            f"/api/v1/auth/team/{teller_membership.id}/deactivate/"
+            f"/api/v1/auth/team/{agent_membership.id}/deactivate/"
         )
         assert response.status_code == status.HTTP_200_OK

@@ -63,7 +63,7 @@ def transactions(request):
         "bank_deposit_detail", "momo_detail", "cash_detail",
     )
 
-    if membership.role == "teller":
+    if membership.role == "agent":
         qs = qs.filter(initiated_by=request.user)
 
     tx_status = request.query_params.get("status")
@@ -116,7 +116,7 @@ def transaction_detail(request, transaction_id):
     except Transaction.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
-    if membership.role == "teller" and tx.initiated_by != request.user:
+    if membership.role == "agent" and tx.initiated_by != request.user:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     return Response(TransactionSerializer(tx).data)
@@ -245,7 +245,7 @@ def create_cash_transaction(request):
 def pending_approvals(request):
     """List transactions pending approval. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     qs = Transaction.objects.filter(
@@ -262,7 +262,7 @@ def pending_approvals(request):
 def approve_transaction(request, transaction_id):
     """Approve or reject a pending transaction. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -302,7 +302,7 @@ def approve_transaction(request, transaction_id):
 def reverse_transaction(request, transaction_id):
     """Reverse a completed transaction. Admin+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -342,7 +342,7 @@ def expense_requests(request):
 
     if request.method == "GET":
         qs = ExpenseRequest.objects.filter(company=membership.company)
-        if membership.role == "teller":
+        if membership.role == "agent":
             qs = qs.filter(requested_by=request.user)
         return Response(ExpenseRequestSerializer(qs, many=True).data)
 
@@ -361,7 +361,7 @@ def expense_requests(request):
 def approve_expense(request, expense_id):
     """Approve or reject an expense. Manager+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin", "manager"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -401,7 +401,7 @@ def daily_closings(request):
 
     if request.method == "GET":
         qs = DailyClosing.objects.filter(company=membership.company)
-        if membership.role == "teller":
+        if membership.role == "agent":
             qs = qs.filter(closed_by=request.user)
         date_filter = request.query_params.get("date")
         if date_filter:
@@ -432,7 +432,7 @@ def daily_closing_detail(request, closing_id):
     if request.method == "GET":
         return Response(DailyClosingSerializer(closing).data)
 
-    if closing.closed_by != request.user and membership.role not in ("owner", "admin"):
+    if closing.closed_by != request.user and membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     serializer = DailyClosingSerializer(closing, data=request.data, partial=True)
@@ -456,7 +456,7 @@ def provider_balances(request):
     ).select_related("user")
 
     # Non-admins only see their own balances
-    if membership.role not in ("owner", "admin"):
+    if membership.role != "owner":
         qs = qs.filter(user=request.user)
 
     user_filter = request.query_params.get("user")
@@ -474,7 +474,7 @@ def provider_balances(request):
 def set_provider_balance(request):
     """Set starting balance for a user's provider. Admin+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     serializer = SetProviderBalanceSerializer(data=request.data)
@@ -503,7 +503,7 @@ def initialize_all_balances(request):
     Expects: { "user": "<uuid>", "balances": { "mtn": 1000, "vodafone": 500, ... } }
     """
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     user_id = request.data.get("user")
@@ -580,7 +580,7 @@ def admin_adjust_provider_balance(request):
     Supports operations: 'add', 'subtract', 'set'.
     """
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     serializer = AdminAdjustProviderBalanceSerializer(data=request.data)

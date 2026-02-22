@@ -95,7 +95,7 @@ class AdminDashboardConsumer(AsyncWebsocketConsumer):
         return Membership.objects.filter(
             user=user,
             company_id=company_id,
-            role__in=["owner", "admin"],
+            role="owner",
             is_active=True,
         ).exists()
 

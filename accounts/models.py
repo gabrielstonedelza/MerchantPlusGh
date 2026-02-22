@@ -64,15 +64,11 @@ class Membership(models.Model):
 
     class Role(models.TextChoices):
         OWNER = "owner", "Owner"
-        ADMIN = "admin", "Admin"
-        MANAGER = "manager", "Manager"
-        TELLER = "teller", "Teller"
+        AGENT = "agent", "Agent"
 
     ROLE_HIERARCHY = {
-        "owner": 4,
-        "admin": 3,
-        "manager": 2,
-        "teller": 1,
+        "owner": 2,
+        "agent": 1,
     }
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -80,7 +76,7 @@ class Membership(models.Model):
     company = models.ForeignKey(
         "core.Company", on_delete=models.CASCADE, related_name="members"
     )
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.TELLER)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.AGENT)
     branch = models.ForeignKey(
         "core.Branch",
         on_delete=models.SET_NULL,
@@ -125,7 +121,7 @@ class Invitation(models.Model):
     role = models.CharField(
         max_length=20,
         choices=Membership.Role.choices,
-        default=Membership.Role.TELLER,
+        default=Membership.Role.AGENT,
     )
     branch = models.ForeignKey(
         "core.Branch",

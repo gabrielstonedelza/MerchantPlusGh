@@ -145,9 +145,9 @@ def get_my_company(request):
 def update_company(request):
     """Update company details. Owner/Admin only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(
-            {"error": "Only owners and admins can update company details."},
+            {"error": "Only owners can update company details."},
             status=status.HTTP_403_FORBIDDEN,
         )
     serializer = CompanyUpdateSerializer(
@@ -173,9 +173,9 @@ def branches(request):
         return Response(BranchSerializer(qs, many=True).data)
 
     # POST - owner/admin only
-    if membership.role not in ("owner", "admin"):
+    if membership.role != "owner":
         return Response(
-            {"error": "Only owners and admins can create branches."},
+            {"error": "Only owners can create branches."},
             status=status.HTTP_403_FORBIDDEN,
         )
     if not membership.company.subscription_plan.has_multi_branch:
@@ -206,7 +206,7 @@ def branch_detail(request, branch_id):
     if request.method == "GET":
         return Response(BranchSerializer(branch).data)
 
-    if membership.role not in ("owner", "admin"):
+    if membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     if request.method == "PATCH":
@@ -307,9 +307,9 @@ def company_settings(request):
     if request.method == "GET":
         return Response(CompanySettingsSerializer(settings_obj).data)
 
-    if membership.role not in ("owner", "admin"):
+    if membership.role != "owner":
         return Response(
-            {"error": "Only owners and admins can update settings."},
+            {"error": "Only owners can update settings."},
             status=status.HTTP_403_FORBIDDEN,
         )
 

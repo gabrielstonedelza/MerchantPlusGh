@@ -14,7 +14,7 @@ from .webhooks import WebhookEndpoint, WebhookDelivery
 def webhook_endpoints(request):
     """List or create webhook endpoints. Admin+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     if not membership.company.subscription_plan.has_api_access:
@@ -73,7 +73,7 @@ def webhook_endpoints(request):
 def delete_webhook_endpoint(request, endpoint_id):
     """Delete a webhook endpoint. Admin+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
@@ -89,7 +89,7 @@ def delete_webhook_endpoint(request, endpoint_id):
 def webhook_deliveries(request, endpoint_id):
     """List recent deliveries for a webhook endpoint. Admin+ only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:

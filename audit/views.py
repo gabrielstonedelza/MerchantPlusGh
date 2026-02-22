@@ -10,7 +10,7 @@ from .serializers import AuditEntrySerializer
 def audit_log(request):
     """View the company audit trail. Owner/Admin only."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     if not membership.company.subscription_plan.has_audit_trail:
@@ -52,7 +52,7 @@ def audit_log(request):
 def audit_entry_detail(request, entry_id):
     """View a single audit entry with full change details."""
     membership = getattr(request, "membership", None)
-    if not membership or membership.role not in ("owner", "admin"):
+    if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:

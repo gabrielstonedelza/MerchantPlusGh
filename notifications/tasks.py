@@ -55,7 +55,7 @@ def send_daily_summaries():
 
         # Send to all owners and admins
         admin_memberships = Membership.objects.filter(
-            company=company, is_active=True, role__in=["owner", "admin"]
+            company=company, is_active=True, role="owner"
         ).select_related("user")
 
         for m in admin_memberships:
