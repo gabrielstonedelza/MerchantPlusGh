@@ -56,18 +56,60 @@ def send_transaction_alert(user_email: str, user_name: str, tx_data: dict):
     send_notification_email(user_email, subject, message)
 
 
-def send_invitation_email(to_email: str, company_name: str, role: str, token: str):
-    """Send a team invitation email."""
+def send_invitation_email(
+    to_email: str,
+    company_name: str,
+    role: str,
+    token: str,
+    invited_by: str = "",
+):
+    """Send a team invitation email with an accept link."""
+    accept_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
     subject = f"You're invited to join {company_name}"
     message = (
         f"Hello,\n\n"
-        f"You've been invited to join {company_name} on Merchant+ as a {role}.\n\n"
-        f"Use the following invitation token to accept:\n"
-        f"  {token}\n\n"
+        f"{'You have been invited by ' + invited_by + ' to' if invited_by else 'You have been invited to'}"
+        f" join {company_name} on Merchant+ as an {role}.\n\n"
+        f"Click the link below to accept your invitation and create your account:\n\n"
+        f"  {accept_url}\n\n"
         f"This invitation expires in 7 days.\n\n"
-        f"— Merchant+ Team"
+        f"If you did not expect this invitation, you can safely ignore this email.\n\n"
+        f"— The Merchant+ Team"
     )
-    send_notification_email(to_email, subject, message)
+    html_message = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; padding: 20px 0; border-bottom: 2px solid #D4A843;">
+            <h1 style="color: #D4A843; margin: 0;">Merchant+</h1>
+        </div>
+        <div style="padding: 30px 0;">
+            <p style="color: #333; font-size: 16px;">Hello,</p>
+            <p style="color: #333; font-size: 16px;">
+                {'<strong>' + invited_by + '</strong> has invited you to' if invited_by else 'You have been invited to'}
+                join <strong>{company_name}</strong> on Merchant+ as an <strong>{role}</strong>.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{accept_url}"
+                   style="background-color: #D4A843; color: #000; padding: 14px 32px;
+                          text-decoration: none; border-radius: 8px; font-weight: bold;
+                          font-size: 16px; display: inline-block;">
+                    Accept Invitation
+                </a>
+            </div>
+            <p style="color: #666; font-size: 14px;">
+                Or copy and paste this link in your browser:<br>
+                <a href="{accept_url}" style="color: #D4A843;">{accept_url}</a>
+            </p>
+            <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
+            <p style="color: #999; font-size: 12px;">
+                If you did not expect this invitation, you can safely ignore this email.
+            </p>
+        </div>
+        <div style="border-top: 1px solid #eee; padding-top: 15px; text-align: center;">
+            <p style="color: #999; font-size: 12px;">&copy; Merchant+ — Powering Payments in Ghana</p>
+        </div>
+    </div>
+    """
+    send_notification_email(to_email, subject, message, html_message=html_message)
 
 
 def send_daily_summary(

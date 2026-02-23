@@ -18,6 +18,7 @@ from .serializers import (
     AcceptInvitationSerializer,
     LoginSerializer,
 )
+from notifications.email import send_invitation_email
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +373,18 @@ def invitations(request):
         invited_by=request.user,
         expires_at=timezone.now() + timedelta(days=7),
     )
+
+    # Send invitation email
+    try:
+        send_invitation_email(
+            to_email=invitation.email,
+            company_name=membership.company.name,
+            role=invitation.role,
+            token=invitation.token,
+            invited_by=request.user.full_name,
+        )
+    except Exception:
+        pass  # Invitation created; email failure is non-blocking
 
     return Response(
         InvitationSerializer(invitation).data,
