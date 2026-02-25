@@ -28,6 +28,7 @@ urlpatterns = [
     path("team/<uuid:member_id>/", views.team_member_detail, name="team-detail"),
     path("team/<uuid:member_id>/update/", views.update_team_member, name="team-update"),
     path("team/<uuid:member_id>/deactivate/", views.deactivate_team_member, name="team-deactivate"),
+    path("team/<uuid:member_id>/delete/", views.delete_team_member, name="team-delete"),
 
     # Invitations
     path("invitations/", views.invitations, name="invitation-list-create"),

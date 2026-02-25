@@ -1,18 +1,18 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Transaction, ProviderBalance
+from .models import AgentRequest, ProviderBalance
 
 
-@receiver(post_save, sender=Transaction)
-def transaction_post_save(sender, instance, created, **kwargs):
-    """Create notifications and broadcast real-time events for transactions."""
+@receiver(post_save, sender=AgentRequest)
+def agent_request_post_save(sender, instance, created, **kwargs):
+    """Create notifications and broadcast real-time events for agent requests."""
     from notifications.models import Notification
 
     if created:
         company = instance.company
         settings = getattr(company, "settings", None)
 
-        # Notify admins about large transactions
+        # Notify admins about large requests
         if settings and settings.notify_on_large_transaction:
             if instance.amount >= settings.large_transaction_threshold:
                 from accounts.models import Membership
@@ -23,36 +23,33 @@ def transaction_post_save(sender, instance, created, **kwargs):
                     Notification.objects.create(
                         company=company, user=m.user,
                         category=Notification.Category.TRANSACTION,
-                        title="Large Transaction Alert",
+                        title="Large Request Alert",
                         message=(
-                            f"A {instance.transaction_type} of {instance.amount} "
-                            f"{instance.currency} ({instance.reference}) was initiated "
-                            f"by {instance.initiated_by.full_name if instance.initiated_by else 'System'}."
+                            f"A {instance.transaction_type} request of {instance.amount} GHS "
+                            f"({instance.reference}) was submitted and is awaiting your approval."
                         ),
                         related_object_id=str(instance.id),
                     )
 
-        # Notify approvers if approval required
-        if instance.requires_approval and instance.status == "pending":
+        # Notify approvers — all new requests require approval
+        if instance.status == "pending":
             from accounts.models import Membership
             approver_memberships = Membership.objects.filter(
-                company=company, role="owner",
-                is_active=True,
-            ).exclude(user=instance.initiated_by)
+                company=company, role="owner", is_active=True,
+            )
             for m in approver_memberships:
                 Notification.objects.create(
                     company=company, user=m.user,
                     category=Notification.Category.APPROVAL,
                     title="Approval Required",
                     message=(
-                        f"{instance.initiated_by.full_name if instance.initiated_by else 'Someone'} "
-                        f"submitted a {instance.transaction_type} of {instance.amount} "
-                        f"{instance.currency} that requires your approval."
+                        f"A {instance.transaction_type} of {instance.amount} GHS "
+                        f"({instance.reference}) requires your approval."
                     ),
                     related_object_id=str(instance.id),
                 )
 
-    # Broadcast transaction event to admin dashboard via WebSocket
+    # Broadcast agent request event to admin dashboard via WebSocket
     try:
         from .broadcast import broadcast_to_company
         broadcast_to_company(
@@ -68,17 +65,14 @@ def transaction_post_save(sender, instance, created, **kwargs):
                     "status": instance.status,
                     "amount": str(instance.amount),
                     "fee": str(instance.fee),
-                    "net_amount": str(instance.net_amount),
-                    "currency": instance.currency,
                     "customer_name": instance.customer.full_name if instance.customer else None,
-                    "initiated_by_name": instance.initiated_by.full_name if instance.initiated_by else None,
-                    "created_at": instance.created_at.isoformat() if instance.created_at else None,
+                    "requested_at": instance.requested_at.isoformat() if instance.requested_at else None,
                     "is_new": created,
                 },
             },
         )
     except Exception:
-        pass  # Don't break transactions if WebSocket layer is unavailable
+        pass  # Don't break requests if WebSocket layer is unavailable
 
 
 @receiver(post_save, sender=ProviderBalance)

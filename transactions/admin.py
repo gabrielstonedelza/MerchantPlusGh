@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Transaction, BankDeposit, MobileMoneyTransaction,
+    AgentRequest, BankDeposit, MobileMoneyTransaction,
     CashTransaction, ExpenseRequest, DailyClosing,
 )
 
@@ -20,17 +20,16 @@ class CashInline(admin.StackedInline):
     extra = 0
 
 
-@admin.register(Transaction)
-class TransactionAdmin(admin.ModelAdmin):
+@admin.register(AgentRequest)
+class AgentRequestAdmin(admin.ModelAdmin):
     list_display = [
         "reference", "transaction_type", "channel", "status",
-        "amount", "fee", "currency", "company",
-        "initiated_by", "created_at",
+        "amount", "fee", "company", "requested_at",
     ]
     list_filter = ["transaction_type", "channel", "status", "company"]
-    search_fields = ["reference", "description"]
-    raw_id_fields = ["company", "branch", "customer", "initiated_by", "approved_by"]
-    readonly_fields = ["id", "reference", "created_at", "updated_at"]
+    search_fields = ["reference"]
+    raw_id_fields = ["company", "customer", "approved_by"]
+    readonly_fields = ["id", "reference", "requested_at"]
     inlines = [BankDepositInline, MoMoInline, CashInline]
 
 

@@ -61,6 +61,7 @@ class Company(models.Model):
     """
 
     class Status(models.TextChoices):
+        PENDING_VERIFICATION = "pending_verification", "Pending Verification"
         ACTIVE = "active", "Active"
         SUSPENDED = "suspended", "Suspended"
         DEACTIVATED = "deactivated", "Deactivated"
@@ -101,7 +102,7 @@ class Company(models.Model):
 
     # Status
     status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.ACTIVE
+        max_length=25, choices=Status.choices, default=Status.PENDING_VERIFICATION
     )
     is_verified = models.BooleanField(default=False)
 

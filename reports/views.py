@@ -6,8 +6,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from transactions.models import Transaction, ExpenseRequest
-from transactions.serializers import TransactionSerializer
+from transactions.models import AgentRequest, ExpenseRequest
+from transactions.serializers import AgentRequestSerializer
 from customers.models import Customer
 from accounts.models import Membership
 from .models import SavedReport
@@ -27,72 +27,52 @@ def dashboard(request):
     company = membership.company
     today = timezone.now().date()
 
-    today_txns = Transaction.objects.filter(company=company, created_at__date=today)
+    today_reqs = AgentRequest.objects.filter(company=company, requested_at__date=today)
 
-    total_transactions_today = today_txns.count()
+    total_requests_today = today_reqs.count()
 
-    deposits_today = today_txns.filter(
-        transaction_type="deposit", status="completed"
+    deposits_today = today_reqs.filter(
+        transaction_type="deposit", status="approved"
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-    withdrawals_today = today_txns.filter(
-        transaction_type="withdrawal", status="completed"
+    withdrawals_today = today_reqs.filter(
+        transaction_type="withdrawal", status="approved"
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-    fees_today = today_txns.filter(
-        status="completed"
+    fees_today = today_reqs.filter(
+        status="approved"
     ).aggregate(total=Sum("fee"))["total"] or Decimal("0")
 
-    pending_approvals = Transaction.objects.filter(
-        company=company, requires_approval=True, status="pending"
+    pending_approvals = AgentRequest.objects.filter(
+        company=company, status="pending"
     ).count()
 
     total_customers = Customer.objects.filter(company=company, status="active").count()
     total_active_users = Membership.objects.filter(company=company, is_active=True).count()
 
     by_channel = {}
-    for row in today_txns.values("channel").annotate(count=Count("id")):
+    for row in today_reqs.values("channel").annotate(count=Count("id")):
         by_channel[row["channel"]] = row["count"]
 
     by_status = {}
-    for row in today_txns.values("status").annotate(count=Count("id")):
+    for row in today_reqs.values("status").annotate(count=Count("id")):
         by_status[row["status"]] = row["count"]
 
-    recent = Transaction.objects.filter(
+    recent = AgentRequest.objects.filter(
         company=company
-    ).select_related("initiated_by", "customer", "branch").order_by("-created_at")[:10]
-
-    first_of_month = today.replace(day=1)
-    top_agents_qs = (
-        Transaction.objects.filter(
-            company=company, created_at__date__gte=first_of_month, status="completed",
-        )
-        .values("initiated_by__full_name", "initiated_by__id")
-        .annotate(transaction_count=Count("id"), total_volume=Sum("amount"))
-        .order_by("-total_volume")[:10]
-    )
-    top_agents = [
-        {
-            "user_id": str(row["initiated_by__id"]),
-            "name": row["initiated_by__full_name"],
-            "transaction_count": row["transaction_count"],
-            "total_volume": str(row["total_volume"] or 0),
-        }
-        for row in top_agents_qs
-    ]
+    ).select_related("approved_by", "customer").order_by("-requested_at")[:10]
 
     return Response({
-        "total_transactions_today": total_transactions_today,
+        "total_requests_today": total_requests_today,
         "total_deposits_today": str(deposits_today),
         "total_withdrawals_today": str(withdrawals_today),
         "total_fees_today": str(fees_today),
         "pending_approvals": pending_approvals,
         "total_customers": total_customers,
         "total_active_users": total_active_users,
-        "transactions_by_channel": by_channel,
-        "transactions_by_status": by_status,
-        "recent_transactions": TransactionSerializer(recent, many=True).data,
-        "top_agents": top_agents,
+        "requests_by_channel": by_channel,
+        "requests_by_status": by_status,
+        "recent_requests": AgentRequestSerializer(recent, many=True).data,
     })
 
 
@@ -101,21 +81,17 @@ def dashboard(request):
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def transaction_summary(request):
-    """Aggregated transaction report with filters."""
+    """Aggregated request report with filters."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
-    qs = Transaction.objects.filter(company=company, status="completed")
+    qs = AgentRequest.objects.filter(company=company, status="approved")
 
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
-    qs = qs.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
-
-    branch = request.query_params.get("branch")
-    if branch:
-        qs = qs.filter(branch_id=branch)
+    qs = qs.filter(requested_at__date__gte=date_from, requested_at__date__lte=date_to)
 
     channel = request.query_params.get("channel")
     if channel:
@@ -126,8 +102,9 @@ def transaction_summary(request):
         qs = qs.filter(transaction_type=tx_type)
 
     totals = qs.aggregate(
-        total_count=Count("id"), total_amount=Sum("amount"),
-        total_fees=Sum("fee"), total_net=Sum("net_amount"),
+        total_count=Count("id"),
+        total_amount=Sum("amount"),
+        total_fees=Sum("fee"),
     )
 
     by_type = list(qs.values("transaction_type").annotate(
@@ -139,12 +116,12 @@ def transaction_summary(request):
     ))
 
     daily = list(
-        qs.values("created_at__date")
+        qs.values("requested_at__date")
         .annotate(count=Count("id"), total=Sum("amount"))
-        .order_by("created_at__date")
+        .order_by("requested_at__date")
     )
     daily_trend = [
-        {"date": str(row["created_at__date"]), "count": row["count"], "total": str(row["total"] or 0)}
+        {"date": str(row["requested_at__date"]), "count": row["count"], "total": str(row["total"] or 0)}
         for row in daily
     ]
 
@@ -154,7 +131,6 @@ def transaction_summary(request):
             "count": totals["total_count"],
             "amount": str(totals["total_amount"] or 0),
             "fees": str(totals["total_fees"] or 0),
-            "net": str(totals["total_net"] or 0),
         },
         "by_type": by_type,
         "by_channel": by_channel,
@@ -163,11 +139,11 @@ def transaction_summary(request):
 
 
 # ---------------------------------------------------------------------------
-# Agent Performance Report
+# Request Volume Report (replaces agent_performance — no initiated_by field)
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def agent_performance(request):
-    """Report on each agent's transaction volume and count."""
+    """Request volume breakdown by type and channel."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -176,41 +152,31 @@ def agent_performance(request):
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
 
-    agents = (
-        Transaction.objects.filter(
-            company=company, status="completed",
-            created_at__date__gte=date_from, created_at__date__lte=date_to,
-        )
-        .values("initiated_by__id", "initiated_by__full_name", "initiated_by__email")
-        .annotate(
-            total_transactions=Count("id"),
-            total_deposits=Count("id", filter=Q(transaction_type="deposit")),
-            total_withdrawals=Count("id", filter=Q(transaction_type="withdrawal")),
-            deposit_volume=Sum("amount", filter=Q(transaction_type="deposit")),
-            withdrawal_volume=Sum("amount", filter=Q(transaction_type="withdrawal")),
-            total_volume=Sum("amount"),
-            total_fees_generated=Sum("fee"),
-        )
-        .order_by("-total_volume")
+    qs = AgentRequest.objects.filter(
+        company=company,
+        requested_at__date__gte=date_from,
+        requested_at__date__lte=date_to,
     )
 
-    result = [
-        {
-            "user_id": str(a["initiated_by__id"]),
-            "name": a["initiated_by__full_name"],
-            "email": a["initiated_by__email"],
-            "total_transactions": a["total_transactions"],
-            "total_deposits": a["total_deposits"],
-            "total_withdrawals": a["total_withdrawals"],
-            "deposit_volume": str(a["deposit_volume"] or 0),
-            "withdrawal_volume": str(a["withdrawal_volume"] or 0),
-            "total_volume": str(a["total_volume"] or 0),
-            "total_fees_generated": str(a["total_fees_generated"] or 0),
-        }
-        for a in agents
-    ]
+    by_type = list(qs.values("transaction_type").annotate(
+        count=Count("id"),
+        total_amount=Sum("amount"),
+        total_fees=Sum("fee"),
+        approved=Count("id", filter=Q(status="approved")),
+        pending=Count("id", filter=Q(status="pending")),
+        rejected=Count("id", filter=Q(status="rejected")),
+    ))
 
-    return Response({"period": {"from": date_from, "to": date_to}, "agents": result})
+    by_channel = list(qs.values("channel").annotate(
+        count=Count("id"),
+        total_amount=Sum("amount"),
+    ))
+
+    return Response({
+        "period": {"from": date_from, "to": date_to},
+        "by_type": by_type,
+        "by_channel": by_channel,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +184,7 @@ def agent_performance(request):
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def revenue_report(request):
-    """Revenue from fees and commissions."""
+    """Revenue from fees."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -227,9 +193,9 @@ def revenue_report(request):
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
 
-    qs = Transaction.objects.filter(
-        company=company, status="completed",
-        created_at__date__gte=date_from, created_at__date__lte=date_to,
+    qs = AgentRequest.objects.filter(
+        company=company, status="approved",
+        requested_at__date__gte=date_from, requested_at__date__lte=date_to,
     )
 
     total_fees = qs.aggregate(total=Sum("fee"))["total"] or Decimal("0")
@@ -237,10 +203,10 @@ def revenue_report(request):
     fees_by_type = list(qs.values("transaction_type").annotate(fees=Sum("fee")).order_by("-fees"))
 
     daily = list(
-        qs.values("created_at__date").annotate(fees=Sum("fee")).order_by("created_at__date")
+        qs.values("requested_at__date").annotate(fees=Sum("fee")).order_by("requested_at__date")
     )
     daily_trend = [
-        {"date": str(row["created_at__date"]), "fees": str(row["fees"] or 0)}
+        {"date": str(row["requested_at__date"]), "fees": str(row["fees"] or 0)}
         for row in daily
     ]
 

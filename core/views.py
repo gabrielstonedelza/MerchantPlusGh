@@ -83,6 +83,7 @@ def register_company(request):
         subscription_plan=plan,
         subscription_status="trial",
         trial_ends_at=timezone.now() + timedelta(days=14),
+        status=Company.Status.PENDING_VERIFICATION,
     )
 
     # Create owner user
@@ -116,9 +117,21 @@ def register_company(request):
         is_headquarters=True,
     )
 
+    # Send pending verification email to the owner
+    try:
+        from notifications.email import send_verification_pending_email
+        send_verification_pending_email(
+            to_email=owner.email,
+            owner_name=owner.full_name,
+            company_name=company.name,
+        )
+    except Exception:
+        pass  # Email failure is non-blocking
+
     return Response(
         {
-            "message": "Company registered successfully.",
+            "message": "Company registered successfully. Your account is pending verification.",
+            "pending_verification": True,
             "company": CompanySerializer(company).data,
         },
         status=status.HTTP_201_CREATED,

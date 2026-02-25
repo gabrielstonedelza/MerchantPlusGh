@@ -1,29 +1,26 @@
 """
-CSV and PDF export for Merchant+ reports.
+CSV export for Merchant+ reports.
 
 Endpoints:
   GET /api/v1/reports/export/transactions/  → CSV download
-  GET /api/v1/reports/export/agents/        → CSV download
+  GET /api/v1/reports/export/summary/       → CSV download (by type/channel)
 """
 
 import csv
-import io
 from datetime import date, timedelta
-from decimal import Decimal
+from django.db.models import Sum, Count
 
 from django.http import HttpResponse
-from django.db.models import Sum, Count, Q
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from transactions.models import Transaction
-from accounts.models import Membership
+from transactions.models import AgentRequest
 
 
 @api_view(["GET"])
 def export_transactions_csv(request):
-    """Export transactions as CSV. Manager+ only."""
+    """Export agent requests as CSV. Manager+ only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -32,14 +29,14 @@ def export_transactions_csv(request):
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
 
-    qs = Transaction.objects.filter(
+    qs = AgentRequest.objects.filter(
         company=company,
-        created_at__date__gte=date_from,
-        created_at__date__lte=date_to,
+        requested_at__date__gte=date_from,
+        requested_at__date__lte=date_to,
     ).select_related(
-        "initiated_by", "customer", "branch",
+        "approved_by", "customer",
         "bank_deposit_detail", "momo_detail",
-    ).order_by("-created_at")
+    ).order_by("-requested_at")
 
     tx_status = request.query_params.get("status")
     if tx_status:
@@ -55,31 +52,26 @@ def export_transactions_csv(request):
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
-        f'attachment; filename="transactions_{date_from}_to_{date_to}.csv"'
+        f'attachment; filename="agent_requests_{date_from}_to_{date_to}.csv"'
     )
 
     writer = csv.writer(response)
     writer.writerow([
-        "Reference", "Date", "Type", "Channel", "Status",
-        "Amount", "Fee", "Net Amount", "Currency",
-        "Customer", "Initiated By", "Branch", "Description",
+        "Reference", "Requested At", "Type", "Channel", "Status",
+        "Amount (GHS)", "Fee (GHS)", "Customer", "Approved By",
     ])
 
-    for tx in qs[:5000]:
+    for req in qs[:5000]:
         writer.writerow([
-            tx.reference,
-            tx.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            tx.transaction_type,
-            tx.channel,
-            tx.status,
-            str(tx.amount),
-            str(tx.fee),
-            str(tx.net_amount),
-            tx.currency,
-            tx.customer.full_name if tx.customer else "Walk-in",
-            tx.initiated_by.full_name if tx.initiated_by else "System",
-            tx.branch.name if tx.branch else "-",
-            tx.description[:100],
+            req.reference,
+            req.requested_at.strftime("%Y-%m-%d %H:%M:%S"),
+            req.transaction_type,
+            req.channel,
+            req.status,
+            str(req.amount),
+            str(req.fee),
+            req.customer.full_name if req.customer else "Walk-in",
+            req.approved_by.full_name if req.approved_by else "-",
         ])
 
     return response
@@ -87,7 +79,7 @@ def export_transactions_csv(request):
 
 @api_view(["GET"])
 def export_agents_csv(request):
-    """Export agent performance report as CSV. Manager+ only."""
+    """Export request volume summary by type and channel as CSV. Manager+ only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -96,47 +88,36 @@ def export_agents_csv(request):
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
 
-    agents = (
-        Transaction.objects.filter(
-            company=company, status="completed",
-            created_at__date__gte=date_from, created_at__date__lte=date_to,
+    by_type = (
+        AgentRequest.objects.filter(
+            company=company,
+            requested_at__date__gte=date_from,
+            requested_at__date__lte=date_to,
         )
-        .values("initiated_by__full_name", "initiated_by__email")
-        .annotate(
-            total_transactions=Count("id"),
-            total_deposits=Count("id", filter=Q(transaction_type="deposit")),
-            total_withdrawals=Count("id", filter=Q(transaction_type="withdrawal")),
-            deposit_volume=Sum("amount", filter=Q(transaction_type="deposit")),
-            withdrawal_volume=Sum("amount", filter=Q(transaction_type="withdrawal")),
-            total_volume=Sum("amount"),
-            total_fees=Sum("fee"),
-        )
-        .order_by("-total_volume")
+        .values("transaction_type", "channel", "status")
+        .annotate(count=Count("id"), total_amount=Sum("amount"), total_fees=Sum("fee"))
+        .order_by("transaction_type", "channel", "status")
     )
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
-        f'attachment; filename="agent_performance_{date_from}_to_{date_to}.csv"'
+        f'attachment; filename="request_summary_{date_from}_to_{date_to}.csv"'
     )
 
     writer = csv.writer(response)
     writer.writerow([
-        "Agent Name", "Email", "Total Transactions",
-        "Deposits", "Withdrawals", "Deposit Volume (GHS)",
-        "Withdrawal Volume (GHS)", "Total Volume (GHS)", "Fees Generated (GHS)",
+        "Type", "Channel", "Status", "Count",
+        "Total Amount (GHS)", "Total Fees (GHS)",
     ])
 
-    for a in agents:
+    for row in by_type:
         writer.writerow([
-            a["initiated_by__full_name"],
-            a["initiated_by__email"],
-            a["total_transactions"],
-            a["total_deposits"],
-            a["total_withdrawals"],
-            str(a["deposit_volume"] or 0),
-            str(a["withdrawal_volume"] or 0),
-            str(a["total_volume"] or 0),
-            str(a["total_fees"] or 0),
+            row["transaction_type"],
+            row["channel"],
+            row["status"],
+            row["count"],
+            str(row["total_amount"] or 0),
+            str(row["total_fees"] or 0),
         ])
 
     return response

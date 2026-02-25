@@ -20,7 +20,7 @@ def send_daily_summaries():
     """
     from core.models import CompanySettings
     from accounts.models import Membership
-    from transactions.models import Transaction
+    from transactions.models import AgentRequest
     from customers.models import Customer
     from .email import send_daily_summary
 
@@ -32,24 +32,24 @@ def send_daily_summaries():
         if not company.is_subscription_active:
             continue
 
-        today_txns = Transaction.objects.filter(company=company, created_at__date=today)
+        today_reqs = AgentRequest.objects.filter(company=company, requested_at__date=today)
 
         summary = {
-            "total_transactions": today_txns.count(),
+            "total_transactions": today_reqs.count(),
             "total_deposits": str(
-                today_txns.filter(transaction_type="deposit", status="completed")
+                today_reqs.filter(transaction_type="deposit", status="approved")
                 .aggregate(t=Sum("amount"))["t"] or Decimal("0")
             ),
             "total_withdrawals": str(
-                today_txns.filter(transaction_type="withdrawal", status="completed")
+                today_reqs.filter(transaction_type="withdrawal", status="approved")
                 .aggregate(t=Sum("amount"))["t"] or Decimal("0")
             ),
             "total_fees": str(
-                today_txns.filter(status="completed")
+                today_reqs.filter(status="approved")
                 .aggregate(t=Sum("fee"))["t"] or Decimal("0")
             ),
-            "pending_approvals": Transaction.objects.filter(
-                company=company, requires_approval=True, status="pending"
+            "pending_approvals": AgentRequest.objects.filter(
+                company=company, status="pending"
             ).count(),
         }
 

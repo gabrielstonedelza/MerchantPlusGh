@@ -2,10 +2,10 @@ import uuid
 from django.db import models
 
 
-class Transaction(models.Model):
+class AgentRequest(models.Model):
     """
-    Central transaction record. Every financial operation creates one of these.
-    This is the single source of truth for all money movement.
+    Agent request record. Every financial operation submitted by an agent creates one.
+    All requests start as pending and require admin approval before processing.
     """
 
     class Type(models.TextChoices):
@@ -14,7 +14,6 @@ class Transaction(models.Model):
         TRANSFER = "transfer", "Transfer"
         FEE = "fee", "Fee"
         COMMISSION = "commission", "Commission"
-        REVERSAL = "reversal", "Reversal"
 
     class Channel(models.TextChoices):
         BANK = "bank", "Bank"
@@ -26,38 +25,22 @@ class Transaction(models.Model):
         APPROVED = "approved", "Approved"
         COMPLETED = "completed", "Completed"
         REJECTED = "rejected", "Rejected"
-        REVERSED = "reversed", "Reversed"
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     reference = models.CharField(max_length=30, unique=True, editable=False)
     company = models.ForeignKey(
-        "core.Company", on_delete=models.CASCADE, related_name="transactions"
-    )
-    branch = models.ForeignKey(
-        "core.Branch",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="transactions",
+        "core.Company", on_delete=models.CASCADE, related_name="agent_requests"
     )
     customer = models.ForeignKey(
         "customers.Customer",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="transactions",
+        related_name="agent_requests",
     )
 
-    # Who initiated this transaction
-    initiated_by = models.ForeignKey(
-        "accounts.User",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="initiated_transactions",
-    )
-
-    # Transaction details
+    # Request details
     transaction_type = models.CharField(max_length=20, choices=Type.choices)
     channel = models.CharField(max_length=20, choices=Channel.choices)
     status = models.CharField(
@@ -66,59 +49,37 @@ class Transaction(models.Model):
 
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    net_amount = models.DecimalField(
-        max_digits=14,
-        decimal_places=2,
-        help_text="Amount after fees. Computed on save.",
-    )
-    currency = models.CharField(max_length=3, default="GHS")
 
-    description = models.TextField(blank=True)
-    internal_notes = models.TextField(
-        blank=True, help_text="Notes visible only to company staff."
-    )
-
-    # Approval workflow
-    requires_approval = models.BooleanField(default=False)
+    # Approval workflow — all new requests require admin approval
+    requires_approval = models.BooleanField(default=True)
     approved_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="approved_transactions",
+        related_name="approved_requests",
     )
     approved_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
 
-    # Reversal link
-    reversed_transaction = models.ForeignKey(
-        "self",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="reversals",
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    # Auto-set when the agent hits the request button
+    requested_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-requested_at"]
         indexes = [
-            models.Index(fields=["company", "created_at"]),
+            models.Index(fields=["company", "requested_at"]),
             models.Index(fields=["company", "status"]),
             models.Index(fields=["company", "transaction_type"]),
             models.Index(fields=["reference"]),
         ]
 
     def __str__(self):
-        return f"{self.reference} - {self.transaction_type} {self.amount} {self.currency}"
+        return f"{self.reference} - {self.transaction_type} {self.amount}"
 
     def save(self, *args, **kwargs):
         if not self.reference:
             self.reference = self._generate_reference()
-        if self.net_amount is None:
-            self.net_amount = self.amount - self.fee
         super().save(*args, **kwargs)
 
     @staticmethod
@@ -127,14 +88,14 @@ class Transaction(models.Model):
         import random
         timestamp = int(time.time() * 1000)
         rand = random.randint(100, 999)
-        return f"TXN-{timestamp}-{rand}"
+        return f"REQ-{timestamp}-{rand}"
 
 
 class BankDeposit(models.Model):
-    """Extended details for bank deposit transactions."""
+    """Extended details for bank deposit requests."""
 
     transaction = models.OneToOneField(
-        Transaction, on_delete=models.CASCADE, related_name="bank_deposit_detail"
+        AgentRequest, on_delete=models.CASCADE, related_name="bank_deposit_detail"
     )
     bank_name = models.CharField(max_length=100)
     account_number = models.CharField(max_length=50)
@@ -148,7 +109,7 @@ class BankDeposit(models.Model):
 
 
 class MobileMoneyTransaction(models.Model):
-    """Extended details for mobile money transactions."""
+    """Extended details for mobile money requests."""
 
     class Network(models.TextChoices):
         MTN = "mtn", "MTN"
@@ -162,11 +123,11 @@ class MobileMoneyTransaction(models.Model):
         CASH_OUT = "cash_out", "Cash Out"
 
     transaction = models.OneToOneField(
-        Transaction, on_delete=models.CASCADE, related_name="momo_detail"
+        AgentRequest, on_delete=models.CASCADE, related_name="momo_detail"
     )
     network = models.CharField(max_length=20, choices=Network.choices)
     service_type = models.CharField(max_length=20, choices=ServiceType.choices)
-    sender_number = models.CharField(max_length=20)
+    sender_number = models.CharField(max_length=20, blank=True)
     receiver_number = models.CharField(max_length=20, blank=True)
     momo_reference = models.CharField(max_length=50, blank=True)
 
@@ -175,10 +136,10 @@ class MobileMoneyTransaction(models.Model):
 
 
 class CashTransaction(models.Model):
-    """Extended details for cash transactions."""
+    """Extended details for cash requests."""
 
     transaction = models.OneToOneField(
-        Transaction, on_delete=models.CASCADE, related_name="cash_detail"
+        AgentRequest, on_delete=models.CASCADE, related_name="cash_detail"
     )
     d_200 = models.PositiveIntegerField(default=0, verbose_name="200 GHS notes")
     d_100 = models.PositiveIntegerField(default=0, verbose_name="100 GHS notes")

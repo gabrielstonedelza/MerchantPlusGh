@@ -6,16 +6,15 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import (
-    Transaction, BankDeposit, MobileMoneyTransaction,
+    AgentRequest, BankDeposit, MobileMoneyTransaction,
     CashTransaction, ExpenseRequest, DailyClosing, ProviderBalance,
 )
 from .serializers import (
-    TransactionSerializer,
+    AgentRequestSerializer,
     CreateBankDepositSerializer,
     CreateMoMoTransactionSerializer,
     CreateCashTransactionSerializer,
     ApproveTransactionSerializer,
-    ReverseTransactionSerializer,
     ExpenseRequestSerializer,
     ExpenseRequestCreateSerializer,
     DailyClosingSerializer,
@@ -39,32 +38,22 @@ def _calculate_fee(company, transaction_type, amount):
     return Decimal("0")
 
 
-def _needs_approval(company, amount):
-    settings = getattr(company, "settings", None)
-    if not settings:
-        return False
-    return amount >= settings.require_approval_above
-
-
 # ---------------------------------------------------------------------------
-# Transaction List
+# Agent Request List
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def transactions(request):
-    """List transactions. Supports filtering by status, type, channel, customer, date range."""
+    """List agent requests. Supports filtering by status, type, channel, customer, date range."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
-    qs = Transaction.objects.filter(
+    qs = AgentRequest.objects.filter(
         company=membership.company
     ).select_related(
-        "initiated_by", "approved_by", "customer", "branch",
+        "approved_by", "customer",
         "bank_deposit_detail", "momo_detail", "cash_detail",
     )
-
-    if membership.role == "agent":
-        qs = qs.filter(initiated_by=request.user)
 
     tx_status = request.query_params.get("status")
     if tx_status:
@@ -82,52 +71,45 @@ def transactions(request):
     if customer_id:
         qs = qs.filter(customer_id=customer_id)
 
-    branch_id = request.query_params.get("branch")
-    if branch_id:
-        qs = qs.filter(branch_id=branch_id)
-
     date_from = request.query_params.get("date_from")
     if date_from:
-        qs = qs.filter(created_at__date__gte=date_from)
+        qs = qs.filter(requested_at__date__gte=date_from)
 
     date_to = request.query_params.get("date_to")
     if date_to:
-        qs = qs.filter(created_at__date__lte=date_to)
+        qs = qs.filter(requested_at__date__lte=date_to)
 
     search = request.query_params.get("search")
     if search:
-        qs = qs.filter(Q(reference__icontains=search) | Q(description__icontains=search))
+        qs = qs.filter(reference__icontains=search)
 
-    return Response(TransactionSerializer(qs[:200], many=True).data)
+    return Response(AgentRequestSerializer(qs[:200], many=True).data)
 
 
 @api_view(["GET"])
 def transaction_detail(request, transaction_id):
-    """Get a single transaction with full details."""
+    """Get a single agent request with full details."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
-        tx = Transaction.objects.select_related(
-            "initiated_by", "approved_by", "customer", "branch",
+        req = AgentRequest.objects.select_related(
+            "approved_by", "customer",
             "bank_deposit_detail", "momo_detail", "cash_detail",
         ).get(id=transaction_id, company=membership.company)
-    except Transaction.DoesNotExist:
+    except AgentRequest.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
-    if membership.role == "agent" and tx.initiated_by != request.user:
-        return Response(status=status.HTTP_403_FORBIDDEN)
-
-    return Response(TransactionSerializer(tx).data)
+    return Response(AgentRequestSerializer(req).data)
 
 
 # ---------------------------------------------------------------------------
-# Create Transactions
+# Create Agent Requests
 # ---------------------------------------------------------------------------
 @api_view(["POST"])
 def create_bank_deposit(request):
-    """Create a bank deposit transaction."""
+    """Submit a bank deposit request. Always starts as pending for admin approval."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -139,30 +121,31 @@ def create_bank_deposit(request):
     company = membership.company
     amount = Decimal(str(data["amount"]))
     fee = _calculate_fee(company, "deposit", amount)
-    requires_approval = _needs_approval(company, amount)
 
-    tx = Transaction.objects.create(
-        company=company, branch=membership.branch,
-        customer_id=data.get("customer"), initiated_by=request.user,
-        transaction_type=Transaction.Type.DEPOSIT,
-        channel=Transaction.Channel.BANK,
-        status=Transaction.Status.PENDING if requires_approval else Transaction.Status.COMPLETED,
-        amount=amount, fee=fee, net_amount=amount - fee,
-        description=data.get("description", ""),
-        requires_approval=requires_approval,
+    req = AgentRequest.objects.create(
+        company=company,
+        customer_id=data.get("customer"),
+        transaction_type=AgentRequest.Type.DEPOSIT,
+        channel=AgentRequest.Channel.BANK,
+        status=AgentRequest.Status.PENDING,
+        amount=amount,
+        fee=fee,
+        requires_approval=True,
     )
     BankDeposit.objects.create(
-        transaction=tx, bank_name=data["bank_name"],
-        account_number=data["account_number"], account_name=data["account_name"],
+        transaction=req,
+        bank_name=data["bank_name"],
+        account_number=data["account_number"],
+        account_name=data["account_name"],
         depositor_name=data["depositor_name"],
         slip_number=data.get("slip_number", ""),
     )
-    return Response(TransactionSerializer(tx).data, status=status.HTTP_201_CREATED)
+    return Response(AgentRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
 def create_momo_transaction(request):
-    """Create a mobile money deposit or withdrawal."""
+    """Submit a mobile money request. Always starts as pending for admin approval."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -181,30 +164,31 @@ def create_momo_transaction(request):
     tx_type = data["transaction_type"]
     amount = Decimal(str(data["amount"]))
     fee = _calculate_fee(company, tx_type, amount)
-    requires_approval = _needs_approval(company, amount)
 
-    tx = Transaction.objects.create(
-        company=company, branch=membership.branch,
-        customer_id=data.get("customer"), initiated_by=request.user,
-        transaction_type=tx_type, channel=Transaction.Channel.MOBILE_MONEY,
-        status=Transaction.Status.PENDING if requires_approval else Transaction.Status.COMPLETED,
-        amount=amount, fee=fee, net_amount=amount - fee,
-        description=data.get("description", ""),
-        requires_approval=requires_approval,
+    req = AgentRequest.objects.create(
+        company=company,
+        customer_id=data.get("customer"),
+        transaction_type=tx_type,
+        channel=AgentRequest.Channel.MOBILE_MONEY,
+        status=AgentRequest.Status.PENDING,
+        amount=amount,
+        fee=fee,
+        requires_approval=True,
     )
     MobileMoneyTransaction.objects.create(
-        transaction=tx, network=data["network"],
+        transaction=req,
+        network=data["network"],
         service_type=data["service_type"],
-        sender_number=data["sender_number"],
+        sender_number=data.get("sender_number", ""),
         receiver_number=data.get("receiver_number", ""),
         momo_reference=data.get("momo_reference", ""),
     )
-    return Response(TransactionSerializer(tx).data, status=status.HTTP_201_CREATED)
+    return Response(AgentRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
 def create_cash_transaction(request):
-    """Create a cash deposit or withdrawal."""
+    """Submit a cash request. Always starts as pending for admin approval."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -217,25 +201,25 @@ def create_cash_transaction(request):
     tx_type = data["transaction_type"]
     amount = Decimal(str(data["amount"]))
     fee = _calculate_fee(company, tx_type, amount)
-    requires_approval = _needs_approval(company, amount)
 
-    tx = Transaction.objects.create(
-        company=company, branch=membership.branch,
-        customer_id=data.get("customer"), initiated_by=request.user,
-        transaction_type=tx_type, channel=Transaction.Channel.CASH,
-        status=Transaction.Status.PENDING if requires_approval else Transaction.Status.COMPLETED,
-        amount=amount, fee=fee, net_amount=amount - fee,
-        description=data.get("description", ""),
-        requires_approval=requires_approval,
+    req = AgentRequest.objects.create(
+        company=company,
+        customer_id=data.get("customer"),
+        transaction_type=tx_type,
+        channel=AgentRequest.Channel.CASH,
+        status=AgentRequest.Status.PENDING,
+        amount=amount,
+        fee=fee,
+        requires_approval=True,
     )
     CashTransaction.objects.create(
-        transaction=tx,
+        transaction=req,
         d_200=data.get("d_200", 0), d_100=data.get("d_100", 0),
         d_50=data.get("d_50", 0), d_20=data.get("d_20", 0),
         d_10=data.get("d_10", 0), d_5=data.get("d_5", 0),
         d_2=data.get("d_2", 0), d_1=data.get("d_1", 0),
     )
-    return Response(TransactionSerializer(tx).data, status=status.HTTP_201_CREATED)
+    return Response(AgentRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------
@@ -243,91 +227,50 @@ def create_cash_transaction(request):
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def pending_approvals(request):
-    """List transactions pending approval. Manager+ only."""
+    """List agent requests pending approval. Owner only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
-    qs = Transaction.objects.filter(
-        company=membership.company, requires_approval=True,
-        status=Transaction.Status.PENDING,
+    qs = AgentRequest.objects.filter(
+        company=membership.company,
+        status=AgentRequest.Status.PENDING,
     ).select_related(
-        "initiated_by", "customer", "branch",
+        "approved_by", "customer",
         "bank_deposit_detail", "momo_detail", "cash_detail",
     )
-    return Response(TransactionSerializer(qs, many=True).data)
+    return Response(AgentRequestSerializer(qs, many=True).data)
 
 
 @api_view(["POST"])
 def approve_transaction(request, transaction_id):
-    """Approve or reject a pending transaction. Manager+ only."""
+    """Approve or reject a pending agent request. Owner only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
-        tx = Transaction.objects.get(
+        req = AgentRequest.objects.get(
             id=transaction_id, company=membership.company,
-            status=Transaction.Status.PENDING,
+            status=AgentRequest.Status.PENDING,
         )
-    except Transaction.DoesNotExist:
+    except AgentRequest.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
-
-    if tx.initiated_by == request.user:
-        return Response(
-            {"error": "Cannot approve your own transaction."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
     serializer = ApproveTransactionSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     action = serializer.validated_data["action"]
 
     if action == "approve":
-        tx.status = Transaction.Status.COMPLETED
+        req.status = AgentRequest.Status.APPROVED
     else:
-        tx.status = Transaction.Status.REJECTED
-        tx.rejection_reason = serializer.validated_data.get("rejection_reason", "")
+        req.status = AgentRequest.Status.REJECTED
+        req.rejection_reason = serializer.validated_data.get("rejection_reason", "")
 
-    tx.approved_by = request.user
-    tx.approved_at = timezone.now()
-    tx.save()
-    return Response(TransactionSerializer(tx).data)
-
-
-# ---------------------------------------------------------------------------
-# Reversal
-# ---------------------------------------------------------------------------
-@api_view(["POST"])
-def reverse_transaction(request, transaction_id):
-    """Reverse a completed transaction. Admin+ only."""
-    membership = getattr(request, "membership", None)
-    if not membership or membership.role != "owner":
-        return Response(status=status.HTTP_403_FORBIDDEN)
-
-    try:
-        tx = Transaction.objects.get(
-            id=transaction_id, company=membership.company,
-            status=Transaction.Status.COMPLETED,
-        )
-    except Transaction.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
-
-    serializer = ReverseTransactionSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-
-    reversal = Transaction.objects.create(
-        company=tx.company, branch=tx.branch, customer=tx.customer,
-        initiated_by=request.user,
-        transaction_type=Transaction.Type.REVERSAL,
-        channel=tx.channel, status=Transaction.Status.COMPLETED,
-        amount=tx.amount, fee=Decimal("0"), net_amount=tx.amount,
-        description=f"Reversal of {tx.reference}: {serializer.validated_data['reason']}",
-        reversed_transaction=tx,
-    )
-    tx.status = Transaction.Status.REVERSED
-    tx.save(update_fields=["status"])
-    return Response(TransactionSerializer(reversal).data, status=status.HTTP_201_CREATED)
+    req.approved_by = request.user
+    req.approved_at = timezone.now()
+    req.save()
+    return Response(AgentRequestSerializer(req).data)
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +302,7 @@ def expense_requests(request):
 
 @api_view(["POST"])
 def approve_expense(request, expense_id):
-    """Approve or reject an expense. Manager+ only."""
+    """Approve or reject an expense. Owner only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -455,7 +398,6 @@ def provider_balances(request):
         company=membership.company
     ).select_related("user")
 
-    # Non-admins only see their own balances
     if membership.role != "owner":
         qs = qs.filter(user=request.user)
 
@@ -535,9 +477,7 @@ def initialize_all_balances(request):
 
 @api_view(["POST"])
 def adjust_provider_balance(request):
-    """
-    Adjust a provider balance (add or subtract). Used when processing transactions.
-    """
+    """Adjust a provider balance (add or subtract). Used when processing requests."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -575,10 +515,7 @@ def adjust_provider_balance(request):
 
 @api_view(["POST"])
 def admin_adjust_provider_balance(request):
-    """
-    Admin/owner can set or adjust any agent's balance for any provider.
-    Supports operations: 'add', 'subtract', 'set'.
-    """
+    """Admin/owner can set or adjust any agent's balance for any provider."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)

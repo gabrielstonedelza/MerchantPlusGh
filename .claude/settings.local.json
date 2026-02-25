@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C /Users/712189512asare/Documents/GitHub/merchantPlus_backend remote -v)",
+      "Bash(git remote -v)",
       "Bash(ssh-add:*)",
       "Bash(python:*)"
     ]

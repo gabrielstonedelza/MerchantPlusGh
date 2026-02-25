@@ -16,9 +16,6 @@ urlpatterns = [
     path("pending/", views.pending_approvals, name="pending-approvals"),
     path("<uuid:transaction_id>/approve/", views.approve_transaction, name="approve-transaction"),
 
-    # Reversals
-    path("<uuid:transaction_id>/reverse/", views.reverse_transaction, name="reverse-transaction"),
-
     # Expenses
     path("expenses/", views.expense_requests, name="expense-list-create"),
     path("expenses/<uuid:expense_id>/approve/", views.approve_expense, name="approve-expense"),

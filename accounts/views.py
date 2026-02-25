@@ -91,6 +91,16 @@ def login(request):
     else:
         membership = active_memberships.first()
 
+    # Check if company is pending verification
+    if membership.company.status == "pending_verification":
+        return Response(
+            {
+                "error": "Your company is pending verification. You will receive an email once your account has been approved.",
+                "pending_verification": True,
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     # Check company status
     if not membership.company.is_subscription_active:
         return Response(
@@ -191,7 +201,7 @@ def user_profile(request):
 # ---------------------------------------------------------------------------
 @api_view(["GET"])
 def team_members(request):
-    """List all members of the current company."""
+    """List all members of the current company (agents only for the owner dashboard)."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
@@ -199,6 +209,10 @@ def team_members(request):
     members = Membership.objects.filter(
         company=membership.company
     ).select_related("user", "branch")
+
+    # Owner sees only agents (not other owners/admins)
+    if membership.role == "owner":
+        members = members.exclude(role="owner")
 
     if membership.role == "agent":
         members = members.filter(is_active=True)
@@ -223,7 +237,7 @@ def team_member_detail(request, member_id):
 
 @api_view(["PATCH"])
 def update_team_member(request, member_id):
-    """Update a team member's role, branch, or active status."""
+    """Update a team member's role, branch, active status, or user details (name, email, phone)."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(
@@ -232,7 +246,9 @@ def update_team_member(request, member_id):
         )
 
     try:
-        target = Membership.objects.get(id=member_id, company=membership.company)
+        target = Membership.objects.select_related("user").get(
+            id=member_id, company=membership.company
+        )
     except Membership.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -273,6 +289,35 @@ def update_team_member(request, member_id):
             target.deactivated_at = timezone.now()
 
     target.save()
+
+    # Update user details (full_name, email, phone) if provided
+    user = target.user
+    user_changed = False
+
+    if "full_name" in request.data:
+        new_name = request.data["full_name"].strip()
+        if new_name:
+            user.full_name = new_name
+            user_changed = True
+
+    if "email" in request.data:
+        new_email = request.data["email"].strip().lower()
+        if new_email and new_email != user.email:
+            if User.objects.filter(email=new_email).exclude(id=user.id).exists():
+                return Response(
+                    {"error": "A user with this email already exists."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.email = new_email
+            user_changed = True
+
+    if "phone" in request.data:
+        user.phone = request.data["phone"].strip()
+        user_changed = True
+
+    if user_changed:
+        user.save()
+
     return Response(MembershipSerializer(target).data)
 
 
@@ -304,6 +349,50 @@ def deactivate_team_member(request, member_id):
     target.deactivated_at = timezone.now()
     target.save(update_fields=["is_active", "deactivated_at"])
     return Response({"message": f"{target.user.full_name} has been deactivated."})
+
+
+@api_view(["DELETE"])
+def delete_team_member(request, member_id):
+    """Permanently delete an agent's membership and user account."""
+    membership = getattr(request, "membership", None)
+    if not membership or membership.role != "owner":
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        target = Membership.objects.select_related("user").get(
+            id=member_id, company=membership.company
+        )
+    except Membership.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if target.role == "owner":
+        return Response(
+            {"error": "Cannot delete the company owner."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if target.role_level >= membership.role_level:
+        return Response(
+            {"error": "Cannot delete a member with equal or higher role."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    user = target.user
+    agent_name = user.full_name
+
+    # Delete the membership
+    target.delete()
+
+    # If the user has no other memberships, delete the user account entirely
+    if not Membership.objects.filter(user=user).exists():
+        # Also delete auth token(s)
+        Token.objects.filter(user=user).delete()
+        user.delete()
+
+    return Response(
+        {"message": f"{agent_name}'s account has been deleted."},
+        status=status.HTTP_200_OK,
+    )
 
 
 # ---------------------------------------------------------------------------

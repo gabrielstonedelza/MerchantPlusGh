@@ -82,9 +82,11 @@ class TestChangePassword:
 @pytest.mark.django_db
 class TestTeamManagement:
     def test_list_team_members(self, owner_client, owner_membership, agent_membership):
+        """Owner should see only agents (not themselves) in the team list."""
         response = owner_client.get("/api/v1/auth/team/")
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 2
+        assert len(response.data) == 1  # Only the agent, owner is excluded
+        assert response.data[0]["role"] == "agent"
 
     def test_agent_cannot_deactivate(self, agent_client, agent_membership, owner_membership):
         response = agent_client.post(

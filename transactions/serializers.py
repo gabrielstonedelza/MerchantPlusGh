@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Transaction, BankDeposit, MobileMoneyTransaction,
+    AgentRequest, BankDeposit, MobileMoneyTransaction,
     CashTransaction, ExpenseRequest, DailyClosing, ProviderBalance,
 )
 
@@ -36,51 +36,44 @@ class CashDetailSerializer(serializers.ModelSerializer):
         ]
 
 
-class TransactionSerializer(serializers.ModelSerializer):
-    initiated_by_name = serializers.CharField(
-        source="initiated_by.full_name", read_only=True
-    )
+class AgentRequestSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(
         source="approved_by.full_name", read_only=True, default=None
     )
     customer_name = serializers.CharField(
         source="customer.full_name", read_only=True, default=None
     )
-    branch_name = serializers.CharField(
-        source="branch.name", read_only=True, default=None
-    )
     bank_deposit_detail = BankDepositDetailSerializer(read_only=True)
     momo_detail = MoMoDetailSerializer(read_only=True)
     cash_detail = CashDetailSerializer(read_only=True)
 
     class Meta:
-        model = Transaction
+        model = AgentRequest
         fields = [
-            "id", "reference", "company", "branch", "branch_name",
+            "id", "reference", "company",
             "customer", "customer_name",
-            "initiated_by", "initiated_by_name",
             "transaction_type", "channel", "status",
-            "amount", "fee", "net_amount", "currency",
-            "description", "internal_notes",
+            "amount", "fee",
             "requires_approval", "approved_by", "approved_by_name",
             "approved_at", "rejection_reason",
-            "reversed_transaction",
             "bank_deposit_detail", "momo_detail", "cash_detail",
-            "created_at", "updated_at",
+            "requested_at",
         ]
         read_only_fields = [
-            "id", "reference", "company", "initiated_by",
-            "fee", "net_amount",
+            "id", "reference", "company",
+            "fee",
             "requires_approval", "approved_by", "approved_at",
-            "reversed_transaction",
-            "created_at", "updated_at",
+            "requested_at",
         ]
+
+
+# Alias so existing imports in other apps don't break
+TransactionSerializer = AgentRequestSerializer
 
 
 class CreateBankDepositSerializer(serializers.Serializer):
     customer = serializers.UUIDField(required=False, allow_null=True)
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
-    description = serializers.CharField(required=False, allow_blank=True)
     bank_name = serializers.CharField(max_length=100)
     account_number = serializers.CharField(max_length=50)
     account_name = serializers.CharField(max_length=255)
@@ -94,12 +87,11 @@ class CreateMoMoTransactionSerializer(serializers.Serializer):
         choices=[("deposit", "Deposit"), ("withdrawal", "Withdrawal")]
     )
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
-    description = serializers.CharField(required=False, allow_blank=True)
     network = serializers.ChoiceField(choices=MobileMoneyTransaction.Network.choices)
     service_type = serializers.ChoiceField(
         choices=MobileMoneyTransaction.ServiceType.choices
     )
-    sender_number = serializers.CharField(max_length=20)
+    sender_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     receiver_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     momo_reference = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
@@ -110,7 +102,6 @@ class CreateCashTransactionSerializer(serializers.Serializer):
         choices=[("deposit", "Deposit"), ("withdrawal", "Withdrawal")]
     )
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
-    description = serializers.CharField(required=False, allow_blank=True)
     d_200 = serializers.IntegerField(default=0)
     d_100 = serializers.IntegerField(default=0)
     d_50 = serializers.IntegerField(default=0)
@@ -124,10 +115,6 @@ class CreateCashTransactionSerializer(serializers.Serializer):
 class ApproveTransactionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=[("approve", "Approve"), ("reject", "Reject")])
     rejection_reason = serializers.CharField(required=False, allow_blank=True)
-
-
-class ReverseTransactionSerializer(serializers.Serializer):
-    reason = serializers.CharField()
 
 
 class ExpenseRequestSerializer(serializers.ModelSerializer):
