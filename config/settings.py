@@ -132,7 +132,7 @@ AUTHENTICATION_BACKENDS = [
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "accounts.authentication.CookieTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -186,6 +186,7 @@ SPECTACULAR_SETTINGS = {
 # CORS
 # ---------------------------------------------------------------------------
 CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL", default=True, cast=bool)
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",

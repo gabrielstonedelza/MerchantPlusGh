@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.utils import timezone
 from datetime import timedelta
@@ -129,19 +130,31 @@ def login(request):
     except Exception:
         pass  # No 2FA configured — proceed normally
 
-    return Response({
+    response = Response({
         "token": token.key,
         "user": UserSerializer(user).data,
         "membership": MembershipSerializer(membership).data,
         "companies": companies,
     })
+    response.set_cookie(
+        'auth_token',
+        token.key,
+        httponly=True,
+        samesite='Lax',
+        secure=not settings.DEBUG,
+        max_age=86400 * 30,
+        path='/',
+    )
+    return response
 
 
 @api_view(["POST"])
 def logout(request):
-    """Delete auth token."""
+    """Delete auth token and clear the auth cookie."""
     Token.objects.filter(user=request.user).delete()
-    return Response({"message": "Logged out."})
+    response = Response({"message": "Logged out."})
+    response.delete_cookie('auth_token', path='/')
+    return response
 
 
 # ---------------------------------------------------------------------------

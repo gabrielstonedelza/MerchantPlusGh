@@ -1,4 +1,5 @@
 import json
+from http.cookies import SimpleCookie
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from urllib.parse import parse_qs
@@ -14,10 +15,17 @@ class AdminDashboardConsumer(AsyncWebsocketConsumer):
     """
 
     async def connect(self):
-        # Extract company_id from query string: ws://host/ws/admin/dashboard/?company_id=xxx&token=yyy
+        # Extract company_id from query string: ws://host/ws/admin/dashboard/?company_id=xxx
         query_params = parse_qs(self.scope["query_string"].decode())
         company_id = query_params.get("company_id", [None])[0]
-        token_key = query_params.get("token", [None])[0]
+
+        # Read auth token from the httpOnly cookie sent with the WS upgrade request
+        headers = dict(self.scope.get('headers', []))
+        cookie_header = headers.get(b'cookie', b'').decode()
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+        morsel = cookie.get('auth_token')
+        token_key = morsel.value if morsel else None
 
         if not company_id or not token_key:
             await self.close()

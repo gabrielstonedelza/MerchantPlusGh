@@ -10,6 +10,7 @@ Endpoints:
   POST /api/v1/auth/2fa/backup-codes/  — Regenerate backup codes
 """
 
+from django.conf import settings
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -194,7 +195,17 @@ def twofa_verify_login(request):
             "Generate new backup codes in your security settings."
         )
 
-    return Response(response_data)
+    response = Response(response_data)
+    response.set_cookie(
+        'auth_token',
+        token_obj.key,
+        httponly=True,
+        samesite='Lax',
+        secure=not settings.DEBUG,
+        max_age=86400 * 30,
+        path='/',
+    )
+    return response
 
 
 @api_view(["POST"])

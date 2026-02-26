@@ -16,11 +16,22 @@ available before the view runs.
 def _resolve_user(request):
     """
     Return the authenticated user from either:
-    - Django session (already set by AuthenticationMiddleware), or
+    - Django session (already set by AuthenticationMiddleware),
+    - httpOnly auth_token cookie, or
     - DRF Authorization: Token <key> header.
     """
     if request.user and request.user.is_authenticated:
         return request.user
+
+    cookie_token = request.COOKIES.get('auth_token')
+    if cookie_token:
+        try:
+            from rest_framework.authtoken.models import Token
+            token_obj = Token.objects.select_related('user').get(key=cookie_token)
+            if token_obj.user.is_active:
+                return token_obj.user
+        except Exception:
+            pass
 
     auth_header = request.META.get("HTTP_AUTHORIZATION", "")
     if auth_header.startswith("Token "):
