@@ -1,11 +1,15 @@
 import uuid
 from django.db import models
 
+from .encryption import encrypt_uploaded_file
+
 
 class Customer(models.Model):
     """
-    A customer registered by a company's staff.
-    Customers are scoped to a company (tenant).
+    A customer shared across the entire MerchantPlus platform.
+    Any company can register a new customer and they can transact with any company.
+    Phone numbers, full names, and emails are unique across all customers.
+    Photos are encrypted at rest for security.
     """
 
     class KYCStatus(models.TextChoices):
@@ -19,32 +23,22 @@ class Customer(models.Model):
         BLOCKED = "blocked", "Blocked"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    company = models.ForeignKey(
-        "core.Company", on_delete=models.CASCADE, related_name="customers"
-    )
     registered_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.SET_NULL,
         null=True,
         related_name="registered_customers",
     )
-    branch = models.ForeignKey(
-        "core.Branch",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="customers",
-    )
 
-    # Personal info
-    full_name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=20)
-    email = models.EmailField(blank=True)
+    # Personal info — phone, full_name, and email are globally unique
+    full_name = models.CharField(max_length=255, unique=True)
+    phone = models.CharField(max_length=20, unique=True)
+    email = models.EmailField(unique=True, blank=True, null=True)
     date_of_birth = models.DateField(null=True, blank=True)
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     digital_address = models.CharField(max_length=50, blank=True)
-    photo = models.ImageField(upload_to="customer_photos/", blank=True, null=True)
+    photo = models.FileField(upload_to="customer_photos/", blank=True, null=True)
 
     # Identification (KYC)
     id_type = models.CharField(
@@ -58,10 +52,10 @@ class Customer(models.Model):
         blank=True,
     )
     id_number = models.CharField(max_length=50, blank=True)
-    id_document_front = models.ImageField(
+    id_document_front = models.FileField(
         upload_to="customer_ids/", blank=True, null=True
     )
-    id_document_back = models.ImageField(
+    id_document_back = models.FileField(
         upload_to="customer_ids/", blank=True, null=True
     )
     kyc_status = models.CharField(
@@ -93,16 +87,27 @@ class Customer(models.Model):
         related_name="referrals",
     )
 
-    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
-        unique_together = [["company", "phone"]]
 
     def __str__(self):
         return f"{self.full_name} ({self.phone})"
+
+    def save(self, *args, **kwargs):
+        """Encrypt photo and ID document files before saving."""
+        # Encrypt photo if it's a new upload (not already saved to disk)
+        for field_name in ("photo", "id_document_front", "id_document_back"):
+            field = getattr(self, field_name)
+            if field and hasattr(field, "file") and hasattr(field.file, "read"):
+                # This is a new upload — encrypt it
+                encrypted = encrypt_uploaded_file(field.file)
+                if encrypted:
+                    setattr(self, field_name, encrypted)
+
+        super().save(*args, **kwargs)
 
 
 class CustomerAccount(models.Model):
@@ -115,9 +120,6 @@ class CustomerAccount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(
         Customer, on_delete=models.CASCADE, related_name="accounts"
-    )
-    company = models.ForeignKey(
-        "core.Company", on_delete=models.CASCADE, related_name="customer_accounts"
     )
 
     account_type = models.CharField(max_length=20, choices=AccountType.choices)

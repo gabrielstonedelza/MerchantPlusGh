@@ -19,25 +19,17 @@ from .serializers import (
 # ---------------------------------------------------------------------------
 @api_view(["GET", "POST"])
 def customers(request):
-    """List or register customers for the current company."""
+    """List or register customers (shared across all companies)."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
-    company = membership.company
-
     if request.method == "GET":
-        qs = Customer.objects.filter(company=company).select_related(
-            "registered_by", "branch"
-        )
+        qs = Customer.objects.select_related("registered_by")
 
         status_filter = request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
-
-        branch_filter = request.query_params.get("branch")
-        if branch_filter:
-            qs = qs.filter(branch_id=branch_filter)
 
         kyc_filter = request.query_params.get("kyc_status")
         if kyc_filter:
@@ -53,29 +45,11 @@ def customers(request):
         return Response(CustomerSerializer(qs, many=True).data)
 
     # POST - register new customer
-    plan = company.subscription_plan
-    current_count = Customer.objects.filter(company=company).count()
-    if plan.max_customers and current_count >= plan.max_customers:
-        return Response(
-            {"error": f"Customer limit reached ({plan.max_customers}). Upgrade your plan."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
     serializer = CustomerCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    if Customer.objects.filter(
-        company=company, phone=serializer.validated_data["phone"]
-    ).exists():
-        return Response(
-            {"error": "A customer with this phone number already exists in your company."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     customer = serializer.save(
-        company=company,
         registered_by=request.user,
-        branch=membership.branch,
     )
 
     return Response(
@@ -92,7 +66,7 @@ def customer_detail(request, customer_id):
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
-        customer = Customer.objects.get(id=customer_id, company=membership.company)
+        customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -133,7 +107,7 @@ def customer_by_phone(request):
         )
 
     try:
-        customer = Customer.objects.get(company=membership.company, phone=phone)
+        customer = Customer.objects.get(phone=phone)
     except Customer.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -145,13 +119,13 @@ def customer_by_phone(request):
 # ---------------------------------------------------------------------------
 @api_view(["POST"])
 def verify_kyc(request, customer_id):
-    """Approve or reject a customer's KYC. Manager+ only."""
+    """Approve or reject a customer's KYC. Owner only."""
     membership = getattr(request, "membership", None)
     if not membership or membership.role != "owner":
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
-        customer = Customer.objects.get(id=customer_id, company=membership.company)
+        customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -178,7 +152,7 @@ def customer_accounts(request, customer_id):
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     try:
-        customer = Customer.objects.get(id=customer_id, company=membership.company)
+        customer = Customer.objects.get(id=customer_id)
     except Customer.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -188,7 +162,7 @@ def customer_accounts(request, customer_id):
 
     serializer = CustomerAccountSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    serializer.save(customer=customer, company=membership.company)
+    serializer.save(customer=customer)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -203,7 +177,6 @@ def delete_customer_account(request, customer_id, account_id):
         account = CustomerAccount.objects.get(
             id=account_id,
             customer_id=customer_id,
-            company=membership.company,
         )
     except CustomerAccount.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)

@@ -45,7 +45,7 @@ class CompanySerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner.full_name", read_only=True)
     is_subscription_active = serializers.BooleanField(read_only=True)
     user_count = serializers.SerializerMethodField()
-    customer_count = serializers.SerializerMethodField()
+    customer_count = serializers.SerializerMethodField()  # global customer count
 
     class Meta:
         model = Company
@@ -70,7 +70,8 @@ class CompanySerializer(serializers.ModelSerializer):
         return obj.members.count()
 
     def get_customer_count(self, obj):
-        return obj.customers.count()
+        from customers.models import Customer
+        return Customer.objects.filter(status="active").count()
 
 
 class CompanyUpdateSerializer(serializers.ModelSerializer):

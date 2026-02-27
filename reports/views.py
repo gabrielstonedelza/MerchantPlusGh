@@ -47,7 +47,7 @@ def dashboard(request):
         company=company, status="pending"
     ).count()
 
-    total_customers = Customer.objects.filter(company=company, status="active").count()
+    total_customers = Customer.objects.filter(status="active").count()
     total_active_users = Membership.objects.filter(company=company, is_active=True).count()
 
     by_channel = {}

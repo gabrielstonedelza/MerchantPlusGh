@@ -77,7 +77,7 @@ class TestTenantIsolation:
         )
         Membership.objects.create(user=user_a, company=company_a, role="owner", is_active=True)
         Customer.objects.create(
-            company=company_a, full_name="Company A Customer",
+            full_name="Company A Customer",
             phone="+233111111111", registered_by=user_a,
         )
 

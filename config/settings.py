@@ -290,6 +290,12 @@ if not DEBUG:
     ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="merchantplusgh.com,www.merchantplusgh.com", cast=Csv())
 
 # ---------------------------------------------------------------------------
+# Customer Photo Encryption (Fernet symmetric encryption)
+# ---------------------------------------------------------------------------
+# Generate a key with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+CUSTOMER_PHOTO_ENCRYPTION_KEY = config("CUSTOMER_PHOTO_ENCRYPTION_KEY", default="")
+
+# ---------------------------------------------------------------------------
 # SMS — Ghana gateway (Hubtel / Arkesel)
 # ---------------------------------------------------------------------------
 SMS_PROVIDER = config("SMS_PROVIDER", default="hubtel")           # hubtel | arkesel

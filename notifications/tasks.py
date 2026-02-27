@@ -21,7 +21,6 @@ def send_daily_summaries():
     from core.models import CompanySettings
     from accounts.models import Membership
     from transactions.models import AgentRequest
-    from customers.models import Customer
     from .email import send_daily_summary
 
     today = date.today()

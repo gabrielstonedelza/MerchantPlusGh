@@ -155,9 +155,8 @@ def agent_client(agent_token, company):
 
 
 @pytest.fixture
-def customer(company, owner_user):
+def customer(owner_user):
     return Customer.objects.create(
-        company=company,
         registered_by=owner_user,
         full_name="John Doe",
         phone="+233501234567",
