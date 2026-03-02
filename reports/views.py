@@ -32,19 +32,23 @@ def dashboard(request):
     total_requests_today = today_reqs.count()
 
     deposits_today = today_reqs.filter(
-        transaction_type="deposit", status="approved"
+        transaction_type="deposit", status="completed"
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
     withdrawals_today = today_reqs.filter(
-        transaction_type="withdrawal", status="approved"
+        transaction_type="withdrawal", status="completed"
     ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
     fees_today = today_reqs.filter(
-        status="approved"
+        status="completed"
     ).aggregate(total=Sum("fee"))["total"] or Decimal("0")
 
     pending_approvals = AgentRequest.objects.filter(
         company=company, status="pending"
+    ).count()
+
+    pending_settlements = AgentRequest.objects.filter(
+        company=company, status="approved"
     ).count()
 
     total_customers = Customer.objects.filter(status="active").count()
@@ -68,6 +72,7 @@ def dashboard(request):
         "total_withdrawals_today": str(withdrawals_today),
         "total_fees_today": str(fees_today),
         "pending_approvals": pending_approvals,
+        "pending_settlements": pending_settlements,
         "total_customers": total_customers,
         "total_active_users": total_active_users,
         "requests_by_channel": by_channel,
@@ -87,7 +92,7 @@ def transaction_summary(request):
         return Response(status=status.HTTP_403_FORBIDDEN)
 
     company = membership.company
-    qs = AgentRequest.objects.filter(company=company, status="approved")
+    qs = AgentRequest.objects.filter(company=company, status="completed")
 
     date_from = request.query_params.get("date_from", str(date.today() - timedelta(days=30)))
     date_to = request.query_params.get("date_to", str(date.today()))
@@ -162,6 +167,7 @@ def agent_performance(request):
         count=Count("id"),
         total_amount=Sum("amount"),
         total_fees=Sum("fee"),
+        completed=Count("id", filter=Q(status="completed")),
         approved=Count("id", filter=Q(status="approved")),
         pending=Count("id", filter=Q(status="pending")),
         rejected=Count("id", filter=Q(status="rejected")),
@@ -194,7 +200,7 @@ def revenue_report(request):
     date_to = request.query_params.get("date_to", str(date.today()))
 
     qs = AgentRequest.objects.filter(
-        company=company, status="approved",
+        company=company, status="completed",
         requested_at__date__gte=date_from, requested_at__date__lte=date_to,
     )
 

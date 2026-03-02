@@ -112,13 +112,18 @@ class CustomerAccountSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(
         source="customer.full_name", read_only=True
     )
+    # Read-only display name for convenience (e.g. "Ecobank", "MTN")
+    bank_or_network_display = serializers.CharField(
+        source="bank_or_network_display", read_only=True
+    )
 
     class Meta:
         model = CustomerAccount
         fields = [
             "id", "customer", "customer_name",
             "account_type", "account_number", "account_name",
-            "bank_or_network", "is_primary", "is_verified",
+            "bank", "mobile_network", "bank_or_network_display",
+            "is_primary", "is_verified",
             "created_at",
         ]
         read_only_fields = ["id", "is_verified", "created_at"]

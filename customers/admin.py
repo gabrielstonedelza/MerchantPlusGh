@@ -2,6 +2,22 @@ from django.contrib import admin
 from .models import Customer, CustomerAccount
 
 
+class CustomerAccountInline(admin.TabularInline):
+    """Inline showing a customer's bank/MoMo accounts on the Customer change page."""
+
+    model = CustomerAccount
+    extra = 0
+    fields = [
+        "account_type",
+        "bank",
+        "mobile_network",
+        "account_number",
+        "account_name",
+        "is_primary",
+        "is_verified",
+    ]
+
+
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
     list_display = [
@@ -13,6 +29,7 @@ class CustomerAdmin(admin.ModelAdmin):
     autocomplete_fields = ["registered_by"]
     raw_id_fields = ["referred_by"]
     readonly_fields = ["id", "created_at", "updated_at"]
+    inlines = [CustomerAccountInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Filter registered_by to only show users with active memberships (agents/owners)."""
@@ -32,8 +49,8 @@ class CustomerAdmin(admin.ModelAdmin):
 @admin.register(CustomerAccount)
 class CustomerAccountAdmin(admin.ModelAdmin):
     list_display = [
-        "account_name", "account_number", "bank_or_network",
+        "account_name", "account_number", "bank", "mobile_network",
         "account_type", "customer", "is_primary",
     ]
-    list_filter = ["account_type", "is_verified"]
+    list_filter = ["account_type", "bank", "mobile_network", "is_verified"]
     search_fields = ["account_name", "account_number", "customer__full_name"]

@@ -1,16 +1,16 @@
 from rest_framework import serializers
 from .models import (
-    AgentRequest, BankDeposit, MobileMoneyTransaction,
+    AgentRequest, BankTransaction, MobileMoneyTransaction,
     CashTransaction, ExpenseRequest, DailyClosing, ProviderBalance,
 )
 
 
-class BankDepositDetailSerializer(serializers.ModelSerializer):
+class BankTransactionDetailSerializer(serializers.ModelSerializer):
     class Meta:
-        model = BankDeposit
+        model = BankTransaction
         fields = [
             "bank_name", "account_number", "account_name",
-            "depositor_name", "slip_number", "slip_image",
+            "customer_name",
         ]
 
 
@@ -37,13 +37,28 @@ class CashDetailSerializer(serializers.ModelSerializer):
 
 
 class AgentRequestSerializer(serializers.ModelSerializer):
+    requested_by_name = serializers.CharField(
+        source="requested_by.full_name", read_only=True, default=None
+    )
     approved_by_name = serializers.CharField(
         source="approved_by.full_name", read_only=True, default=None
+    )
+    settled_by_name = serializers.CharField(
+        source="settled_by.full_name", read_only=True, default=None
     )
     customer_name = serializers.CharField(
         source="customer.full_name", read_only=True, default=None
     )
-    bank_deposit_detail = BankDepositDetailSerializer(read_only=True)
+    customer_phone = serializers.CharField(
+        source="customer.phone", read_only=True, default=None
+    )
+    bank_display = serializers.CharField(
+        source="get_bank_display", read_only=True, default=""
+    )
+    mobile_network_display = serializers.CharField(
+        source="get_mobile_network_display", read_only=True, default=""
+    )
+    bank_transaction_detail = BankTransactionDetailSerializer(read_only=True)
     momo_detail = MoMoDetailSerializer(read_only=True)
     cash_detail = CashDetailSerializer(read_only=True)
 
@@ -51,18 +66,24 @@ class AgentRequestSerializer(serializers.ModelSerializer):
         model = AgentRequest
         fields = [
             "id", "reference", "company",
-            "customer", "customer_name",
-            "transaction_type", "channel", "status",
+            "requested_by", "requested_by_name",
+            "customer", "customer_name", "customer_phone",
+            "transaction_type", "channel",
+            "bank", "bank_display", "mobile_network", "mobile_network_display",
+            "status",
             "amount", "fee",
             "requires_approval", "approved_by", "approved_by_name",
             "approved_at", "rejection_reason",
-            "bank_deposit_detail", "momo_detail", "cash_detail",
+            "settled_by", "settled_by_name", "settled_at",
+            "bank_transaction_detail", "momo_detail", "cash_detail",
             "requested_at",
         ]
         read_only_fields = [
             "id", "reference", "company",
+            "requested_by",
             "fee",
             "requires_approval", "approved_by", "approved_at",
+            "settled_by", "settled_at",
             "requested_at",
         ]
 
@@ -71,14 +92,19 @@ class AgentRequestSerializer(serializers.ModelSerializer):
 TransactionSerializer = AgentRequestSerializer
 
 
-class CreateBankDepositSerializer(serializers.Serializer):
+class CreateBankTransactionSerializer(serializers.Serializer):
     customer = serializers.UUIDField(required=False, allow_null=True)
+    transaction_type = serializers.ChoiceField(
+        choices=[("deposit", "Deposit"), ("withdrawal", "Withdrawal")]
+    )
     amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    bank = serializers.ChoiceField(
+        choices=AgentRequest.Bank.choices, required=False, allow_blank=True,
+    )
     bank_name = serializers.CharField(max_length=100)
     account_number = serializers.CharField(max_length=50)
     account_name = serializers.CharField(max_length=255)
-    depositor_name = serializers.CharField(max_length=255)
-    slip_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    customer_name = serializers.CharField(max_length=255)
 
 
 class CreateMoMoTransactionSerializer(serializers.Serializer):

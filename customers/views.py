@@ -94,15 +94,35 @@ def customer_detail(request, customer_id):
 
 @api_view(["GET"])
 def customer_by_phone(request):
-    """Look up a customer by phone number."""
+    """
+    Look up a customer by exact phone number, or search by name/phone.
+
+    Usage:
+      - Exact lookup:  GET /api/v1/customers/lookup/?phone=+233501234567
+      - Search:        GET /api/v1/customers/lookup/?q=kwame
+                       GET /api/v1/customers/lookup/?q=0501234
+
+    The search mode returns up to 20 results for the mobile app
+    to let agents find customers quickly by name or phone.
+    """
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
+    # Search mode — mobile app sends ?q= for autocomplete
+    query = request.query_params.get("q")
+    if query:
+        qs = Customer.objects.filter(
+            models.Q(full_name__icontains=query)
+            | models.Q(phone__icontains=query)
+        ).filter(status="active")[:20]
+        return Response(CustomerSerializer(qs, many=True).data)
+
+    # Exact phone lookup (legacy)
     phone = request.query_params.get("phone")
     if not phone:
         return Response(
-            {"error": "Phone parameter is required."},
+            {"error": "Provide 'phone' or 'q' parameter."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

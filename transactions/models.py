@@ -18,7 +18,33 @@ class AgentRequest(models.Model):
     class Channel(models.TextChoices):
         BANK = "bank", "Bank"
         MOBILE_MONEY = "mobile_money", "Mobile Money"
-        CASH = "cash", "Cash"
+
+    class Bank(models.TextChoices):
+        ECOBANK = "ecobank", "Ecobank"
+        GCB = "gcb", "GCB Bank"
+        FIDELITY = "fidelity", "Fidelity Bank"
+        CAL_BANK = "cal_bank", "Cal Bank"
+        STANBIC = "stanbic", "Stanbic Bank"
+        ABSA = "absa", "Absa Bank"
+        UBA = "uba", "UBA"
+        ACCESS = "access", "Access Bank"
+        ZENITH = "zenith", "Zenith Bank"
+        REPUBLIC = "republic", "Republic Bank"
+        PRUDENTIAL = "prudential", "Prudential Bank"
+        FNB = "fnb", "First National Bank"
+        STANDARD_CHARTERED = "standard_chartered", "Standard Chartered"
+        SOCIETE_GENERALE = "societe_generale", "Societe Generale"
+        BOA = "boa", "Bank of Africa"
+        ADB = "adb", "Agricultural Dev Bank"
+        FAB = "fab", "First Atlantic Bank"
+        OMNIBSIC = "omnibsic", "OmniBSIC Bank"
+        NIB = "nib", "National Investment Bank"
+        ARB_APEX = "arb_apex", "ARB Apex Bank"
+
+    class MobileNetwork(models.TextChoices):
+        MTN = "mtn", "MTN"
+        VODAFONE = "vodafone", "Vodafone"
+        AIRTELTIGO = "airteltigo", "AirtelTigo"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -32,6 +58,14 @@ class AgentRequest(models.Model):
     company = models.ForeignKey(
         "core.Company", on_delete=models.CASCADE, related_name="agent_requests"
     )
+    requested_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agent_requests",
+        help_text="The agent who submitted this request.",
+    )
     customer = models.ForeignKey(
         "customers.Customer",
         on_delete=models.SET_NULL,
@@ -43,6 +77,20 @@ class AgentRequest(models.Model):
     # Request details
     transaction_type = models.CharField(max_length=20, choices=Type.choices)
     channel = models.CharField(max_length=20, choices=Channel.choices)
+    bank = models.CharField(
+        max_length=30,
+        choices=Bank.choices,
+        blank=True,
+        default="",
+        help_text="Select the bank (only when channel is Bank).",
+    )
+    mobile_network = models.CharField(
+        max_length=20,
+        choices=MobileNetwork.choices,
+        blank=True,
+        default="",
+        help_text="Select the network (only when channel is Mobile Money).",
+    )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
@@ -61,6 +109,17 @@ class AgentRequest(models.Model):
     )
     approved_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
+
+    # Settlement — filled when the agent executes the approved request
+    settled_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="settled_requests",
+        help_text="The agent who settled (executed) this request.",
+    )
+    settled_at = models.DateTimeField(null=True, blank=True)
 
     # Auto-set when the agent hits the request button
     requested_at = models.DateTimeField(auto_now_add=True)
@@ -91,21 +150,19 @@ class AgentRequest(models.Model):
         return f"REQ-{timestamp}-{rand}"
 
 
-class BankDeposit(models.Model):
-    """Extended details for bank deposit requests."""
+class BankTransaction(models.Model):
+    """Extended details for bank transaction requests (deposits and withdrawals)."""
 
     transaction = models.OneToOneField(
-        AgentRequest, on_delete=models.CASCADE, related_name="bank_deposit_detail"
+        AgentRequest, on_delete=models.CASCADE, related_name="bank_transaction_detail"
     )
     bank_name = models.CharField(max_length=100)
     account_number = models.CharField(max_length=50)
     account_name = models.CharField(max_length=255)
-    depositor_name = models.CharField(max_length=255)
-    slip_number = models.CharField(max_length=50, blank=True)
-    slip_image = models.ImageField(upload_to="deposit_slips/", blank=True, null=True)
+    customer_name = models.CharField(max_length=255)
 
     def __str__(self):
-        return f"Bank deposit {self.transaction.reference} to {self.bank_name}"
+        return f"Bank transaction {self.transaction.reference} at {self.bank_name}"
 
 
 class MobileMoneyTransaction(models.Model):
@@ -117,8 +174,6 @@ class MobileMoneyTransaction(models.Model):
         AIRTELTIGO = "airteltigo", "AirtelTigo"
 
     class ServiceType(models.TextChoices):
-        SEND_MONEY = "send_money", "Send Money"
-        RECEIVE_MONEY = "receive_money", "Receive Money"
         CASH_IN = "cash_in", "Cash In"
         CASH_OUT = "cash_out", "Cash Out"
 
@@ -245,15 +300,14 @@ class ProviderBalance(models.Model):
     """
     Tracks agent float balances per provider for each user in a company.
     Each user starts with a configured amount for each provider (MTN, Vodafone,
-    Airtel, Tigo, Ecobank, Fidelity, Cal Bank) and the balance changes as
-    they process deposits and withdrawals.
+    AirtelTigo, Ecobank, Fidelity, Cal Bank, Cash) and the balance changes as
+    they process deposits and withdrawals through settlements.
     """
 
     class Provider(models.TextChoices):
         MTN = "mtn", "MTN"
         VODAFONE = "vodafone", "Vodafone"
-        AIRTEL = "airtel", "Airtel"
-        TIGO = "tigo", "Tigo"
+        AIRTELTIGO = "airteltigo", "AirtelTigo"
         ECOBANK = "ecobank", "Ecobank"
         FIDELITY = "fidelity", "Fidelity"
         CAL_BANK = "cal_bank", "Cal Bank"

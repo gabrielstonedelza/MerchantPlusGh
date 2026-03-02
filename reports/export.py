@@ -35,7 +35,7 @@ def export_transactions_csv(request):
         requested_at__date__lte=date_to,
     ).select_related(
         "approved_by", "customer",
-        "bank_deposit_detail", "momo_detail",
+        "bank_transaction_detail", "momo_detail",
     ).order_by("-requested_at")
 
     tx_status = request.query_params.get("status")

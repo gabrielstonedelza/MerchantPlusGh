@@ -8,13 +8,17 @@ urlpatterns = [
     path("<uuid:transaction_id>/", views.transaction_detail, name="transaction-detail"),
 
     # Create by channel
-    path("bank-deposit/", views.create_bank_deposit, name="create-bank-deposit"),
+    path("bank-transaction/", views.create_bank_transaction, name="create-bank-transaction"),
     path("mobile-money/", views.create_momo_transaction, name="create-momo"),
     path("cash/", views.create_cash_transaction, name="create-cash"),
 
     # Approvals
     path("pending/", views.pending_approvals, name="pending-approvals"),
     path("<uuid:transaction_id>/approve/", views.approve_transaction, name="approve-transaction"),
+
+    # Settlement
+    path("settlements/pending/", views.pending_settlements, name="pending-settlements"),
+    path("<uuid:transaction_id>/settle/", views.settle_request, name="settle-request"),
 
     # Expenses
     path("expenses/", views.expense_requests, name="expense-list-create"),

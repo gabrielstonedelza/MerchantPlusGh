@@ -98,11 +98,15 @@ class Customer(models.Model):
 
     def save(self, *args, **kwargs):
         """Encrypt photo and ID document files before saving."""
-        # Encrypt photo if it's a new upload (not already saved to disk)
         for field_name in ("photo", "id_document_front", "id_document_back"):
             field = getattr(self, field_name)
-            if field and hasattr(field, "file") and hasattr(field.file, "read"):
-                # This is a new upload — encrypt it
+            if not field:
+                continue
+            # Skip files already encrypted (saved to disk with .enc extension)
+            if field.name and field.name.endswith(".enc"):
+                continue
+            # Only encrypt genuinely new uploads
+            if hasattr(field, "file") and hasattr(field.file, "read"):
                 encrypted = encrypt_uploaded_file(field.file)
                 if encrypted:
                     setattr(self, field_name, encrypted)
@@ -117,6 +121,34 @@ class CustomerAccount(models.Model):
         BANK = "bank", "Bank Account"
         MOBILE_MONEY = "mobile_money", "Mobile Money"
 
+    # Re-use the same choice lists defined on AgentRequest
+    class Bank(models.TextChoices):
+        ECOBANK = "ecobank", "Ecobank"
+        GCB = "gcb", "GCB Bank"
+        FIDELITY = "fidelity", "Fidelity Bank"
+        CAL_BANK = "cal_bank", "Cal Bank"
+        STANBIC = "stanbic", "Stanbic Bank"
+        ABSA = "absa", "Absa Bank"
+        UBA = "uba", "UBA"
+        ACCESS = "access", "Access Bank"
+        ZENITH = "zenith", "Zenith Bank"
+        REPUBLIC = "republic", "Republic Bank"
+        PRUDENTIAL = "prudential", "Prudential Bank"
+        FNB = "fnb", "First National Bank"
+        STANDARD_CHARTERED = "standard_chartered", "Standard Chartered"
+        SOCIETE_GENERALE = "societe_generale", "Societe Generale"
+        BOA = "boa", "Bank of Africa"
+        ADB = "adb", "Agricultural Dev Bank"
+        FAB = "fab", "First Atlantic Bank"
+        OMNIBSIC = "omnibsic", "OmniBSIC Bank"
+        NIB = "nib", "National Investment Bank"
+        ARB_APEX = "arb_apex", "ARB Apex Bank"
+
+    class MobileNetwork(models.TextChoices):
+        MTN = "mtn", "MTN"
+        VODAFONE = "vodafone", "Vodafone"
+        AIRTELTIGO = "airteltigo", "AirtelTigo"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(
         Customer, on_delete=models.CASCADE, related_name="accounts"
@@ -125,9 +157,19 @@ class CustomerAccount(models.Model):
     account_type = models.CharField(max_length=20, choices=AccountType.choices)
     account_number = models.CharField(max_length=50)
     account_name = models.CharField(max_length=255)
-    bank_or_network = models.CharField(
-        max_length=100,
-        help_text="Bank name (e.g. Ecobank, GCB) or mobile network (e.g. MTN, Vodafone).",
+    bank = models.CharField(
+        max_length=30,
+        choices=Bank.choices,
+        blank=True,
+        default="",
+        help_text="Select the bank (only when account type is Bank).",
+    )
+    mobile_network = models.CharField(
+        max_length=20,
+        choices=MobileNetwork.choices,
+        blank=True,
+        default="",
+        help_text="Select the network (only when account type is Mobile Money).",
     )
     is_primary = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
@@ -136,5 +178,14 @@ class CustomerAccount(models.Model):
     class Meta:
         ordering = ["-is_primary", "-created_at"]
 
+    @property
+    def bank_or_network_display(self):
+        """Human-readable name of the bank or network."""
+        if self.account_type == self.AccountType.BANK and self.bank:
+            return self.get_bank_display()
+        if self.account_type == self.AccountType.MOBILE_MONEY and self.mobile_network:
+            return self.get_mobile_network_display()
+        return ""
+
     def __str__(self):
-        return f"{self.account_name} - {self.bank_or_network} ({self.account_number})"
+        return f"{self.account_name} - {self.bank_or_network_display} ({self.account_number})"

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.db import transaction as db_transaction
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework import status
@@ -6,12 +7,12 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import (
-    AgentRequest, BankDeposit, MobileMoneyTransaction,
+    AgentRequest, BankTransaction, MobileMoneyTransaction,
     CashTransaction, ExpenseRequest, DailyClosing, ProviderBalance,
 )
 from .serializers import (
     AgentRequestSerializer,
-    CreateBankDepositSerializer,
+    CreateBankTransactionSerializer,
     CreateMoMoTransactionSerializer,
     CreateCashTransactionSerializer,
     ApproveTransactionSerializer,
@@ -51,8 +52,8 @@ def transactions(request):
     qs = AgentRequest.objects.filter(
         company=membership.company
     ).select_related(
-        "approved_by", "customer",
-        "bank_deposit_detail", "momo_detail", "cash_detail",
+        "requested_by", "approved_by", "settled_by", "customer",
+        "bank_transaction_detail", "momo_detail", "cash_detail",
     )
 
     tx_status = request.query_params.get("status")
@@ -81,7 +82,14 @@ def transactions(request):
 
     search = request.query_params.get("search")
     if search:
-        qs = qs.filter(reference__icontains=search)
+        qs = qs.filter(
+            Q(reference__icontains=search)
+            | Q(customer__full_name__icontains=search)
+            | Q(customer__phone__icontains=search)
+            | Q(requested_by__full_name__icontains=search)
+            | Q(transaction_type__icontains=search)
+            | Q(channel__icontains=search)
+        )
 
     return Response(AgentRequestSerializer(qs[:200], many=True).data)
 
@@ -95,8 +103,8 @@ def transaction_detail(request, transaction_id):
 
     try:
         req = AgentRequest.objects.select_related(
-            "approved_by", "customer",
-            "bank_deposit_detail", "momo_detail", "cash_detail",
+            "requested_by", "approved_by", "customer",
+            "bank_transaction_detail", "momo_detail", "cash_detail",
         ).get(id=transaction_id, company=membership.company)
     except AgentRequest.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
@@ -108,37 +116,39 @@ def transaction_detail(request, transaction_id):
 # Create Agent Requests
 # ---------------------------------------------------------------------------
 @api_view(["POST"])
-def create_bank_deposit(request):
-    """Submit a bank deposit request. Always starts as pending for admin approval."""
+def create_bank_transaction(request):
+    """Submit a bank transaction request (deposit or withdrawal). Always starts as pending."""
     membership = getattr(request, "membership", None)
     if not membership:
         return Response(status=status.HTTP_403_FORBIDDEN)
 
-    serializer = CreateBankDepositSerializer(data=request.data)
+    serializer = CreateBankTransactionSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
 
     company = membership.company
+    tx_type = data["transaction_type"]
     amount = Decimal(str(data["amount"]))
-    fee = _calculate_fee(company, "deposit", amount)
+    fee = _calculate_fee(company, tx_type, amount)
 
     req = AgentRequest.objects.create(
         company=company,
+        requested_by=request.user,
         customer_id=data.get("customer"),
-        transaction_type=AgentRequest.Type.DEPOSIT,
+        transaction_type=tx_type,
         channel=AgentRequest.Channel.BANK,
+        bank=data.get("bank", ""),
         status=AgentRequest.Status.PENDING,
         amount=amount,
         fee=fee,
         requires_approval=True,
     )
-    BankDeposit.objects.create(
+    BankTransaction.objects.create(
         transaction=req,
         bank_name=data["bank_name"],
         account_number=data["account_number"],
         account_name=data["account_name"],
-        depositor_name=data["depositor_name"],
-        slip_number=data.get("slip_number", ""),
+        customer_name=data["customer_name"],
     )
     return Response(AgentRequestSerializer(req).data, status=status.HTTP_201_CREATED)
 
@@ -167,9 +177,11 @@ def create_momo_transaction(request):
 
     req = AgentRequest.objects.create(
         company=company,
+        requested_by=request.user,
         customer_id=data.get("customer"),
         transaction_type=tx_type,
         channel=AgentRequest.Channel.MOBILE_MONEY,
+        mobile_network=data["network"],
         status=AgentRequest.Status.PENDING,
         amount=amount,
         fee=fee,
@@ -204,6 +216,7 @@ def create_cash_transaction(request):
 
     req = AgentRequest.objects.create(
         company=company,
+        requested_by=request.user,
         customer_id=data.get("customer"),
         transaction_type=tx_type,
         channel=AgentRequest.Channel.CASH,
@@ -236,8 +249,8 @@ def pending_approvals(request):
         company=membership.company,
         status=AgentRequest.Status.PENDING,
     ).select_related(
-        "approved_by", "customer",
-        "bank_deposit_detail", "momo_detail", "cash_detail",
+        "requested_by", "approved_by", "settled_by", "customer",
+        "bank_transaction_detail", "momo_detail", "cash_detail",
     )
     return Response(AgentRequestSerializer(qs, many=True).data)
 
@@ -270,6 +283,157 @@ def approve_transaction(request, transaction_id):
     req.approved_by = request.user
     req.approved_at = timezone.now()
     req.save()
+    return Response(AgentRequestSerializer(req).data)
+
+
+# ---------------------------------------------------------------------------
+# Settlement — agent executes an approved request
+# ---------------------------------------------------------------------------
+def _resolve_provider_key(req):
+    """Map an AgentRequest's channel to the ProviderBalance provider key."""
+    if req.channel == "bank":
+        return req.bank if req.bank else None
+    elif req.channel == "mobile_money":
+        return req.mobile_network if req.mobile_network else None
+    return None
+
+
+@api_view(["GET"])
+def pending_settlements(request):
+    """List approved requests awaiting settlement by the current agent."""
+    membership = getattr(request, "membership", None)
+    if not membership:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    qs = AgentRequest.objects.filter(
+        company=membership.company,
+        requested_by=request.user,
+        status=AgentRequest.Status.APPROVED,
+    ).select_related(
+        "requested_by", "approved_by", "settled_by", "customer",
+        "bank_transaction_detail", "momo_detail", "cash_detail",
+    )
+    return Response(AgentRequestSerializer(qs, many=True).data)
+
+
+@api_view(["POST"])
+def settle_request(request, transaction_id):
+    """
+    Settle (execute) an approved agent request.
+
+    Called by the agent from the mobile app after admin approval.
+    Adjusts the agent's provider balances atomically:
+
+    DEPOSIT:  Cash += amount,  Bank/Network -= amount
+    WITHDRAWAL: Cash -= amount, Bank/Network += amount
+
+    The total morning float stays the same.
+    """
+    membership = getattr(request, "membership", None)
+    if not membership:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    with db_transaction.atomic():
+        try:
+            req = AgentRequest.objects.select_for_update().get(
+                id=transaction_id,
+                company=membership.company,
+                status=AgentRequest.Status.APPROVED,
+            )
+        except AgentRequest.DoesNotExist:
+            return Response(
+                {"error": "Request not found or not in approved status."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Only the agent who created the request (or an admin) can settle
+        if req.requested_by_id != request.user.id and membership.role != "owner":
+            return Response(
+                {"error": "Only the requesting agent can settle this request."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Determine the provider key for the bank/network side
+        provider_key = _resolve_provider_key(req)
+        if not provider_key:
+            return Response(
+                {"error": "Cannot determine provider for this request."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Only deposits and withdrawals can be settled
+        if req.transaction_type not in ("deposit", "withdrawal"):
+            return Response(
+                {"error": "Only deposit and withdrawal requests can be settled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get agent's cash balance
+        try:
+            cash_balance = ProviderBalance.objects.select_for_update().get(
+                company=membership.company,
+                user=request.user,
+                provider="cash",
+            )
+        except ProviderBalance.DoesNotExist:
+            return Response(
+                {"error": "No cash balance record found. Contact your admin to initialize your float."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get agent's provider balance (bank or network)
+        try:
+            provider_balance = ProviderBalance.objects.select_for_update().get(
+                company=membership.company,
+                user=request.user,
+                provider=provider_key,
+            )
+        except ProviderBalance.DoesNotExist:
+            return Response(
+                {"error": f"No balance record for '{provider_key}'. Contact your admin to initialize your float."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        amount = req.amount
+
+        if req.transaction_type == "deposit":
+            # Agent receives cash from customer, sends e-cash to customer's account
+            if provider_balance.balance < amount:
+                return Response(
+                    {"error": f"Insufficient {provider_balance.get_provider_display()} balance. "
+                              f"Available: {provider_balance.balance}, Required: {amount}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cash_balance.balance += amount
+            provider_balance.balance -= amount
+
+        elif req.transaction_type == "withdrawal":
+            # Agent gives cash to customer, receives e-cash from customer
+            if cash_balance.balance < amount:
+                return Response(
+                    {"error": f"Insufficient cash balance. "
+                              f"Available: {cash_balance.balance}, Required: {amount}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            cash_balance.balance -= amount
+            provider_balance.balance += amount
+
+        # Save balances (triggers WebSocket broadcasts via post_save signals)
+        cash_balance.save()
+        provider_balance.save()
+
+        # Mark request as completed
+        req.status = AgentRequest.Status.COMPLETED
+        req.settled_by = request.user
+        req.settled_at = timezone.now()
+        req.save()
+
+    # Re-fetch with select_related for serialization
+    req = AgentRequest.objects.select_related(
+        "requested_by", "approved_by", "settled_by", "customer",
+        "bank_transaction_detail", "momo_detail", "cash_detail",
+    ).get(id=transaction_id)
+
     return Response(AgentRequestSerializer(req).data)
 
 
