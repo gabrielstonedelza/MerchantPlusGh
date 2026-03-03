@@ -113,9 +113,7 @@ class CustomerAccountSerializer(serializers.ModelSerializer):
         source="customer.full_name", read_only=True
     )
     # Read-only display name for convenience (e.g. "Ecobank", "MTN")
-    bank_or_network_display = serializers.CharField(
-        source="bank_or_network_display", read_only=True
-    )
+    bank_or_network_display = serializers.CharField(read_only=True)
 
     class Meta:
         model = CustomerAccount
