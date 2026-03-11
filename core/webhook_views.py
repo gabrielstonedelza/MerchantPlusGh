@@ -3,11 +3,12 @@ Webhook management API views.
 """
 
 import secrets
+from django.db.models import Count
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .webhooks import WebhookEndpoint, WebhookDelivery
+from .webhooks import WebhookEndpoint, WebhookDelivery, dispatch_webhook
 
 
 @api_view(["GET", "POST"])
@@ -111,3 +112,57 @@ def webhook_deliveries(request, endpoint_id):
     ]
 
     return Response(data)
+
+
+@api_view(["GET"])
+def webhook_stats(request):
+    """Webhook delivery statistics. Owner only."""
+    membership = getattr(request, "membership", None)
+    if not membership or membership.role != "owner":
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    company_endpoints = WebhookEndpoint.objects.filter(company=membership.company)
+    company_deliveries = WebhookDelivery.objects.filter(
+        endpoint__company=membership.company
+    )
+
+    total = company_deliveries.count()
+    by_status = dict(
+        company_deliveries.values("status")
+        .annotate(count=Count("id"))
+        .values_list("status", "count")
+    )
+    top_events = list(
+        company_deliveries.values("event_type")
+        .annotate(count=Count("id"))
+        .order_by("-count")[:10]
+    )
+
+    return Response({
+        "total_deliveries": total,
+        "by_status": by_status,
+        "top_event_types": top_events,
+        "registered_endpoints": company_endpoints.filter(is_active=True).count(),
+    })
+
+
+@api_view(["POST"])
+def webhook_test_ping(request, endpoint_id):
+    """Send a test ping event to a webhook endpoint. Owner only."""
+    membership = getattr(request, "membership", None)
+    if not membership or membership.role != "owner":
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        endpoint = WebhookEndpoint.objects.get(
+            id=endpoint_id, company=membership.company
+        )
+    except WebhookEndpoint.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    dispatch_webhook(
+        company_id=str(membership.company.id),
+        event_type="ping",
+        data={"message": "MerchantPlus webhook test ping"},
+    )
+    return Response({"detail": "Test ping dispatched."})

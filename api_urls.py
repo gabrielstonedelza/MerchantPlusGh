@@ -6,7 +6,10 @@ All endpoints are prefixed with /api/v1/ via config/urls.py.
 from django.urls import path, include
 
 from core.views_health import health_check, readiness_check
-from core.webhook_views import webhook_endpoints, delete_webhook_endpoint, webhook_deliveries
+from core.webhook_views import (
+    webhook_endpoints, delete_webhook_endpoint, webhook_deliveries,
+    webhook_stats, webhook_test_ping,
+)
 from reports.export import export_transactions_csv, export_agents_csv
 
 urlpatterns = [
@@ -17,6 +20,7 @@ urlpatterns = [
     path("notifications/", include("notifications.urls")),
     path("reports/", include("reports.urls")),
     path("audit/", include("audit.urls")),
+    path("fraud/", include("fraud.urls")),
 
     # Health checks (public)
     path("health/", health_check, name="health-check"),
@@ -28,6 +32,8 @@ urlpatterns = [
 
     # Webhook Management
     path("webhooks/", webhook_endpoints, name="webhook-list-create"),
+    path("webhooks/stats/", webhook_stats, name="webhook-stats"),
     path("webhooks/<uuid:endpoint_id>/", delete_webhook_endpoint, name="webhook-delete"),
     path("webhooks/<uuid:endpoint_id>/deliveries/", webhook_deliveries, name="webhook-deliveries"),
+    path("webhooks/<uuid:endpoint_id>/ping/", webhook_test_ping, name="webhook-test-ping"),
 ]

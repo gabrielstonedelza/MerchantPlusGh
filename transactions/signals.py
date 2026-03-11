@@ -49,6 +49,78 @@ def agent_request_post_save(sender, instance, created, **kwargs):
                     related_object_id=str(instance.id),
                 )
 
+    # Run fraud engine on new requests
+    if created:
+        try:
+            from fraud.engine import FraudEngine
+            fraud_signals = FraudEngine.analyse_transaction(instance)
+            if fraud_signals:
+                # Notify admins about fraud signals
+                from accounts.models import Membership
+                admin_memberships = Membership.objects.filter(
+                    company=instance.company, role="owner", is_active=True,
+                )
+                for signal in fraud_signals:
+                    for m in admin_memberships:
+                        Notification.objects.create(
+                            company=instance.company, user=m.user,
+                            category=Notification.Category.SECURITY,
+                            title=f"Fraud Alert: {signal.severity.upper()}",
+                            message=signal.description,
+                            related_object_id=str(signal.id),
+                        )
+                    # Dispatch fraud webhook
+                    try:
+                        from core.webhooks import dispatch_webhook
+                        dispatch_webhook(
+                            company_id=str(instance.company_id),
+                            event_type="fraud.signal.created",
+                            data={
+                                "signal_id": str(signal.id),
+                                "signal_type": signal.signal_type,
+                                "severity": signal.severity,
+                                "risk_score": signal.risk_score,
+                                "customer": signal.customer,
+                                "description": signal.description,
+                                "transaction_reference": instance.reference,
+                            },
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # Don't break requests if fraud engine has issues
+
+    # Dispatch transaction webhook events
+    try:
+        from core.webhooks import dispatch_webhook
+        if created:
+            event_type = "transaction.created"
+        elif instance.status == "approved":
+            event_type = "transaction.approved"
+        elif instance.status == "rejected":
+            event_type = "transaction.rejected"
+        elif instance.status == "completed":
+            event_type = "transaction.completed"
+        else:
+            event_type = None
+
+        if event_type:
+            dispatch_webhook(
+                company_id=str(instance.company_id),
+                event_type=event_type,
+                data={
+                    "id": str(instance.id),
+                    "reference": instance.reference,
+                    "transaction_type": instance.transaction_type,
+                    "channel": instance.channel,
+                    "status": instance.status,
+                    "amount": str(instance.amount),
+                    "customer": instance.customer.full_name if instance.customer else None,
+                },
+            )
+    except Exception:
+        pass
+
     # Broadcast agent request event to admin dashboard via WebSocket
     try:
         from .broadcast import broadcast_to_company
